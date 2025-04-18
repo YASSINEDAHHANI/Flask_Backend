@@ -14,10 +14,22 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from pymongo import MongoClient
 from dotenv import load_dotenv
-
+from cryptography.fernet import Fernet
+import base64
 load_dotenv()
 
+# Custom JSON encoder to handle MongoDB ObjectId
+class MongoJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, ObjectId):
+            return str(obj)
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
 app = Flask(__name__)
+# Configure Flask to use our custom JSON encoder
+app.json_encoder = MongoJSONEncoder
 app.secret_key = os.getenv("SECRET_KEY", "supersecret")
 
 # Session configuration
@@ -77,25 +89,79 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def get_encryption_key():
+    """Get or generate an encryption key for API keys."""
+    key = os.getenv("ENCRYPTION_KEY")
+    if not key:
+        # Generate a key if one doesn't exist
+        key = Fernet.generate_key().decode()
+        # In a production environment, you would save this key securely
+        print(f"Generated new encryption key. Add this to your .env file: ENCRYPTION_KEY={key}")
+    else:
+        # Ensure the key is properly formatted
+        try:
+            key = key.encode() if isinstance(key, str) else key
+            Fernet(key)
+        except Exception as e:
+            print(f"Invalid encryption key: {e}")
+            # Generate a new key as fallback
+            key = Fernet.generate_key().decode()
+            print(f"Generated new encryption key. Add this to your .env file: ENCRYPTION_KEY={key}")
+    
+    return key.encode() if isinstance(key, str) else key
+
+def encrypt_api_key(api_key):
+    """Encrypt an API key."""
+    if not api_key:
+        return None
+    
+    try:
+        f = Fernet(get_encryption_key())
+        return f.encrypt(api_key.encode()).decode()
+    except Exception as e:
+        print(f"Error encrypting API key: {e}")
+        return None
+
+def decrypt_api_key(encrypted_key):
+    """Decrypt an API key."""
+    if not encrypted_key:
+        return None
+    
+    try:
+        f = Fernet(get_encryption_key())
+        return f.decrypt(encrypted_key.encode()).decode()
+    except Exception as e:
+        print(f"Error decrypting API key: {e}")
+        return None
+    
 def get_user_api_key(username, project_id=None):
+    """Get a user's API key, with optional project-specific override."""
+    # First try to get a project-specific key if project_id is provided
     if project_id:
         project_key = api_keys_collection.find_one({
             "user": username,
             "project_id": project_id
         })
-        if project_key:
-            return project_key["api_key"]
+        if project_key and project_key.get("api_key"):
+            decrypted_key = decrypt_api_key(project_key["api_key"])
+            if decrypted_key:
+                return decrypted_key
     
+    # If no project key, try to get the user's default key
     user_key = api_keys_collection.find_one({
         "user": username,
         "project_id": {"$exists": False}
     })
-    if user_key:
-        return user_key["api_key"]
+    if user_key and user_key.get("api_key"):
+        decrypted_key = decrypt_api_key(user_key["api_key"])
+        if decrypted_key:
+            return decrypted_key
     
-    return os.getenv("API_KEY")
+    # If no user keys, use the default from .env
+    return os.getenv("CLAUDE_API_KEY")
 
 def get_anthropic_client(username, project_id=None):
+    """Get an Anthropic client using the appropriate API key."""
     api_key = get_user_api_key(username, project_id)
     if not api_key:
         raise ValueError("No API key available")
@@ -105,7 +171,7 @@ def extract_text_from_pdf(pdf_file):
     text = ""
     try:
         pdf_reader = PyPDF2.PdfReader(pdf_file)
-        for page in pdf_reader.pages:
+        for page in pdf_reader.pages:   
             text += page.extract_text() + "\n"
     except Exception as e:
         return str(e)
@@ -121,7 +187,8 @@ def extract_text_from_docx(docx_file):
         return str(e)
     return text.strip()
 
-def generate_test_cases(requirements, format_type, context="", example_case=""):
+def generate_test_case_prompt(requirements, format_type, context="", example_case=""):
+    """Utility function to generate the prompt for test case generation"""
     try:
         input_text = context + " " + requirements
         detected_lang = langdetect.detect(input_text)
@@ -198,35 +265,9 @@ def login():
         return jsonify({
             "message": "Login successful", 
             "username": username,
-            "email": user.get("email")
+            "email": user.get("email") or username
         })
     return jsonify({"error": "Invalid credentials"}), 401
-
-@app.route("/register", methods=["POST"])
-def register():
-    data = request.json
-    username = data.get("username")
-    password = data.get("password")
-    email = data.get("email")
-
-    if not all([username, password, email]):
-        return jsonify({"error": "Missing required fields"}), 400
-
-    if users_collection.find_one({"username": username}):
-        return jsonify({"error": "Username already exists"}), 400
-
-    if users_collection.find_one({"email": email}):
-        return jsonify({"error": "Email already registered"}), 400
-
-    user = {
-        "username": username,
-        "password": password,
-        "email": email,
-        "created_at": datetime.now(timezone.utc)
-    }
-
-    users_collection.insert_one(user)
-    return jsonify({"message": "Registration successful"})
 
 @app.route("/logout", methods=["POST"])
 @login_required
@@ -246,22 +287,29 @@ def check_session():
             return jsonify({
                 "logged_in": True,
                 "username": session["user"],
-                "email": user.get("email")
-            })
-    return jsonify({"logged_in": False}), 200
+                "email": user.get("email") or session["user"]
+            }), 200
+    return jsonify({"logged_in": False, "error": "Not authenticated"}), 401
 
 # API Key Management
-@app.route("/api_keys", methods=["GET"])
+@app.route("/get_api_key", methods=["GET"])
 @login_required
-def get_api_keys():
+def get_api_key_for_frontend():
     username = session["user"]
-    keys = list(api_keys_collection.find({"user": username}))
+    project_id = request.args.get("project_id")
     
-    for key in keys:
-        key["_id"] = str(key["_id"])
-        key["api_key"] = "*****" + key["api_key"][-4:] if key.get("api_key") else ""
-    
-    return jsonify({"api_keys": keys})
+    try:
+        api_key = get_user_api_key(username, project_id)
+        if not api_key:
+            api_key = os.getenv("CLAUDE_API_KEY", "")
+        
+        if not api_key:
+            return jsonify({"error": "No API key available"}), 500
+            
+        return jsonify({"api_key": api_key})
+    except Exception as e:
+        print(f"Error getting API key: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api_keys", methods=["POST"])
 @login_required
@@ -274,6 +322,11 @@ def create_api_key():
     if not api_key:
         return jsonify({"error": "API key is required"}), 400
     
+    # Encrypt the API key
+    encrypted_key = encrypt_api_key(api_key)
+    if not encrypted_key:
+        return jsonify({"error": "Failed to encrypt API key"}), 500
+    
     query = {"user": username}
     if project_id:
         query["project_id"] = project_id
@@ -285,12 +338,12 @@ def create_api_key():
     if existing_key:
         api_keys_collection.update_one(
             {"_id": existing_key["_id"]},
-            {"$set": {"api_key": api_key}}
+            {"$set": {"api_key": encrypted_key}}
         )
     else:
         key_data = {
             "user": username,
-            "api_key": api_key,
+            "api_key": encrypted_key,
             "created_at": datetime.now(timezone.utc)
         }
         if project_id:
@@ -349,10 +402,12 @@ def get_collaborators(project_id):
 def add_collaborator(project_id):
     username = session["user"]
     data = request.json
-    collaborator_username = data.get("username")
+    collaborator_email = data.get("username")  # The field is called username but contains email
     
-    if not collaborator_username:
-        return jsonify({"error": "Username is required"}), 400
+    print(f"Adding collaborator: {collaborator_email} to project {project_id}")
+    
+    if not collaborator_email:
+        return jsonify({"error": "Email is required"}), 400
     
     # Verify user owns this project
     project = projects_collection.find_one({
@@ -363,14 +418,25 @@ def add_collaborator(project_id):
     if not project:
         return jsonify({"error": "Project not found or you don't have permission"}), 404
     
-    # Check if collaborator exists
-    collaborator = users_collection.find_one({"username": collaborator_username})
+    # Check if collaborator exists by email
+    collaborator = users_collection.find_one({"username": collaborator_email})
+    
     if not collaborator:
-        return jsonify({"error": "User not found"}), 404
+        return jsonify({"error": f"User with email '{collaborator_email}' not found"}), 404
+    
+    # In this system, username is the email
+    collaborator_username = collaborator["username"]
     
     # Check if already a collaborator
-    if collaborator_username in project.get("collaborators", []):
+    if "collaborators" in project and collaborator_username in project.get("collaborators", []):
         return jsonify({"error": "User is already a collaborator"}), 400
+    
+    # Initialize collaborators array if it doesn't exist
+    if "collaborators" not in project:
+        projects_collection.update_one(
+            {"id": project_id},
+            {"$set": {"collaborators": []}}
+        )
     
     # Add to project collaborators
     projects_collection.update_one(
@@ -378,20 +444,27 @@ def add_collaborator(project_id):
         {"$addToSet": {"collaborators": collaborator_username}}
     )
     
-    # Add to collaborators collection
-    collaborators_collection.insert_one({
+    # Check if the collaborator is already in the collaborators collection
+    existing_collab = collaborators_collection.find_one({
         "project_id": project_id,
-        "username": collaborator_username,
-        "email": collaborator.get("email"),
-        "added_by": username,
-        "added_at": datetime.now(timezone.utc)
+        "username": collaborator_username
     })
+    
+    if not existing_collab:
+        # Add to collaborators collection
+        collaborators_collection.insert_one({
+            "project_id": project_id,
+            "username": collaborator_username,
+            "email": collaborator_username,  # Email and username are the same
+            "added_by": username,
+            "added_at": datetime.now(timezone.utc)
+        })
     
     return jsonify({
         "message": "Collaborator added successfully",
         "collaborator": {
             "username": collaborator_username,
-            "email": collaborator.get("email")
+            "email": collaborator_username
         }
     })
 
@@ -457,9 +530,14 @@ def create_project():
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
-    projects_collection.insert_one(project)
+    # Insert the project and get the _id
+    result = projects_collection.insert_one(project)
     
-    return jsonify({"message": "Project created", "project": project})
+    # Create a copy of the project to return
+    response_project = project.copy()
+    response_project["_id"] = str(result.inserted_id)  # Convert ObjectId to string
+    
+    return jsonify({"message": "Project created", "project": response_project})
 
 @app.route("/projects/<project_id>", methods=["GET"])
 @login_required
@@ -679,7 +757,103 @@ def delete_requirement(requirement_id):
     requirements_collection.delete_one({"id": requirement_id})
     return jsonify({"message": "Requirement deleted successfully"})
 
-# Test Case Generation
+@app.route("/save_test_cases", methods=["POST"])
+@login_required
+def save_test_cases():
+    data = request.json
+    test_cases = data.get("test_cases", "")
+    requirements = data.get("requirements", "")
+    project_id = data.get("project_id", "")
+    requirement_id = data.get("requirement_id", "")
+    requirement_title = data.get("requirement_title", "")
+    
+    username = session["user"]
+    
+    history_data = {
+        "user": username,
+        "test_cases": test_cases,
+        "timestamp": datetime.now(timezone.utc),
+        "requirements": requirements,
+        "context": "",
+        "project_id": project_id
+    }
+    
+    if requirement_id:
+        history_data["requirement_id"] = requirement_id
+    if requirement_title:
+        history_data["requirement_title"] = requirement_title
+        
+    history_collection.insert_one(history_data)
+    
+    return jsonify({"message": "Test cases saved successfully"})
+
+@app.route("/test", methods=["GET"])
+def test_endpoint():
+    return jsonify({"message": "API is working!"})
+
+@app.route("/generate_test_cases", methods=["POST", "OPTIONS"])
+def generate_test_cases_endpoint():
+    if request.method == "OPTIONS":
+        return "", 200
+    
+    # Check login
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    data = request.json
+    requirements = data.get("requirements", "")
+    format_type = data.get("format_type", "default")
+    context = data.get("context", "")
+    example_case = data.get("example_case", "")
+    project_id = data.get("project_id", "")
+    requirement_id = data.get("requirement_id", "")
+    requirement_title = data.get("requirement_title", "")
+    
+    if not requirements:
+        return jsonify({"error": "No requirements provided"}), 400
+    
+    username = session["user"]
+    
+    try:
+        # Get the appropriate API key and create the client
+        anthropic_client = get_anthropic_client(username, project_id)
+        
+        test_case_instruction = generate_test_case_prompt(requirements, format_type, context, example_case)
+        
+        response = anthropic_client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=4000,
+            messages=[{"role": "user", "content": test_case_instruction}]
+        )
+        
+        full_response = response.content[0].text
+        
+        # Save to history
+        history_data = {
+            "user": username,
+            "test_cases": full_response,
+            "timestamp": datetime.now(timezone.utc),
+            "requirements": requirements,
+            "context": context,
+            "project_id": project_id
+        }
+        
+        if requirement_id:
+            history_data["requirement_id"] = requirement_id
+        if requirement_title:
+            history_data["requirement_title"] = requirement_title
+            
+        history_collection.insert_one(history_data)
+        
+        return jsonify({
+            "test_cases": full_response,
+            "message": "Test cases generated successfully"
+        })
+    
+    except Exception as e:
+        print(f"Error generating test cases: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/generate_test_cases_stream", methods=["POST"])
 @login_required
 @limiter.limit("5 per minute")
@@ -694,7 +868,7 @@ def generate_test_cases_stream():
     if not requirements:
         return jsonify({"error": "No requirements provided"}), 400
     
-    test_case_instruction = generate_test_cases(requirements, format_type, context, example_case)
+    test_case_instruction = generate_test_case_prompt(requirements, format_type, context, example_case)
     username = session["user"]
     
     def generate():
@@ -721,6 +895,7 @@ def generate_test_cases_stream():
                             "context": context,
                             "project_id": project_id
                         })
+                        yield "data: [DONE]\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
     
@@ -752,7 +927,7 @@ def generate_test_cases_for_requirement():
     if not project:
         return jsonify({"error": "Access denied"}), 403
     
-    test_case_instruction = generate_test_cases(
+    test_case_instruction = generate_test_case_prompt(
         requirement["description"], 
         format_type, 
         requirement["title"], 
@@ -783,12 +958,12 @@ def generate_test_cases_for_requirement():
                             "requirement_title": requirement["title"],
                             "project_id": requirement["project_id"]
                         })
+                        yield "data: [DONE]\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
     
     return Response(generate(), content_type="text/event-stream")
 
-# Chat with Assistant
 @app.route("/chat_with_assistant", methods=["POST"])
 @login_required
 @limiter.limit("10 per minute")
@@ -872,24 +1047,39 @@ def chat_with_assistant():
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
         finally:
             yield "data: [DONE]\n\n"
-    
+
     return Response(generate(), content_type="text/event-stream")
 
 # History Management
+
 @app.route("/history", methods=["GET"])
 @login_required
 def get_history():
     username = session["user"]
-    limit = int(request.args.get("limit", 10))
+    limit = int(request.args.get("limit", 20))
     skip = int(request.args.get("skip", 0))
+    project_id = request.args.get("project_id")
+    requirement_id = request.args.get("requirement_id")
     
-    history = list(history_collection.find({"user": username})
+    # Build query for filtering history
+    query = {"user": username}
+    
+    if project_id:
+        query["project_id"] = project_id
+    
+    if requirement_id:
+        query["requirement_id"] = requirement_id
+    
+    history = list(history_collection.find(query)
         .sort("timestamp", -1)
         .skip(skip)
         .limit(limit))
     
     for item in history:
         item["_id"] = str(item["_id"])
+        # If the timestamp is a datetime object, convert it to ISO string
+        if isinstance(item.get("timestamp"), datetime):
+            item["timestamp"] = item["timestamp"].isoformat()
     
     return jsonify({"history": history})
 
@@ -934,12 +1124,14 @@ def delete_history_item(history_id):
     
     return jsonify({"message": "History item deleted successfully"})
 
+
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Credentials', 'true')
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     return response
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000, host='0.0.0.0')
