@@ -1,11 +1,2 @@
-# Ignore environment files
+# Created by venv; see https://docs.python.org/3/library/venv.html
 .env
-
-# Ignore Python cache
-__pycache__/
-
-# Ignore virtual environment
-venv/
-
-# Ignore uploaded files (if they should not be in the repo)
-uploads/
