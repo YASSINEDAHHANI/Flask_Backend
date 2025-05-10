@@ -63,7 +63,7 @@ limiter = Limiter(
 
 
 # MongoDB setup
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017/")
 mongo_client = MongoClient(MONGO_URI)
 db = mongo_client["chat_app"]
 history_collection = db["chat_history"]
@@ -898,59 +898,90 @@ def generate_test_cases_endpoint():
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
     
-    data = request.json
-    requirements = data.get("requirements", "")
-    format_type = data.get("format_type", "default")
-    context = data.get("context", "")
-    example_case = data.get("example_case", "")
-    project_id = data.get("project_id", "")
-    requirement_id = data.get("requirement_id", "")
-    requirement_title = data.get("requirement_title", "")
-    
-    if not requirements:
-        return jsonify({"error": "No requirements provided"}), 400
-    
-    username = session["user"]
-    
     try:
-        # Get the appropriate API key and create the client
-        anthropic_client = get_anthropic_client(username, project_id)
+        data = request.json
+        requirements = data.get("requirements", "")
+        format_type = data.get("format_type", "default")
+        context = data.get("context", "")
+        example_case = data.get("example_case", "")
+        project_id = data.get("project_id", "")
+        requirement_id = data.get("requirement_id", "")
+        requirement_title = data.get("requirement_title", "")
         
-        test_case_instruction = generate_test_case_prompt(requirements, format_type, context, example_case)
+        if not requirements:
+            return jsonify({"error": "No requirements provided"}), 400
         
-        response = anthropic_client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=4000,
-            messages=[{"role": "user", "content": test_case_instruction}]
-        )
+        username = session["user"]
         
-        full_response = response.content[0].text
+        print(f"Generating test cases for user: {username}")
+        print(f"Project ID: {project_id}")
+        print(f"Requirements: {requirements[:50]}...")  # Print first 50 chars
         
-        # Save to history
-        history_data = {
-            "user": username,
-            "test_cases": full_response,
-            "timestamp": datetime.now(timezone.utc),
-            "requirements": requirements,
-            "context": context,
-            "project_id": project_id
-        }
-        
-        if requirement_id:
-            history_data["requirement_id"] = requirement_id
-        if requirement_title:
-            history_data["requirement_title"] = requirement_title
+        try:
+            # Check if API key is valid before proceeding
+            api_key = get_user_api_key(username, project_id)
+            print(f"API Key available: {bool(api_key)}")
+            if not api_key:
+                return jsonify({"error": "No API key configured. Please add an API key in settings."}), 400
             
-        history_collection.insert_one(history_data)
+            # Try creating a client with this key
+            anthropic_client = anthropic.Anthropic(api_key=api_key)
+            
+            # Generate the test case prompt
+            test_case_instruction = generate_test_case_prompt(requirements, format_type, context, example_case)
+            
+            # Make the API call
+            try:
+                response = anthropic_client.messages.create(
+                    model="claude-3-haiku-20240307",
+                    max_tokens=4000,
+                    messages=[{"role": "user", "content": test_case_instruction}]
+                )
+                
+                full_response = response.content[0].text
+                
+                # Save to history
+                history_data = {
+                    "user": username,
+                    "test_cases": full_response,
+                    "timestamp": datetime.now(timezone.utc),
+                    "requirements": requirements,
+                    "context": context,
+                    "project_id": project_id
+                }
+                
+                if requirement_id:
+                    history_data["requirement_id"] = requirement_id
+                if requirement_title:
+                    history_data["requirement_title"] = requirement_title
+                    
+                history_collection.insert_one(history_data)
+                
+                return jsonify({
+                    "test_cases": full_response,
+                    "message": "Test cases generated successfully"
+                })
+            except Exception as api_error:
+                print(f"Anthropic API error: {api_error}")
+                error_details = str(api_error)
+                
+                # Check for specific error types
+                if "401" in error_details or "invalid x-api-key" in error_details.lower():
+                    return jsonify({"error": "Authentication failed with Anthropic API. Please check your API key."}), 401
+                elif "quota" in error_details.lower() or "rate" in error_details.lower():
+                    return jsonify({"error": "API rate limit exceeded. Please try again later."}), 429
+                else:
+                    return jsonify({"error": f"Anthropic API error: {error_details}"}), 500
+            
+        except Exception as client_error:
+            print(f"Error creating Anthropic client: {client_error}")
+            return jsonify({"error": f"Failed to initialize AI service: {str(client_error)}"}), 500
         
-        return jsonify({
-            "test_cases": full_response,
-            "message": "Test cases generated successfully"
-        })
-    
     except Exception as e:
-        print(f"Error generating test cases: {e}")
-        return jsonify({"error": str(e)}), 500
+        print(f"Unexpected error in generate_test_cases: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route("/generate_test_cases_stream", methods=["POST"])
 @login_required
@@ -1062,6 +1093,7 @@ def generate_test_cases_for_requirement():
     
     return Response(generate(), content_type="text/event-stream")
 
+# Modified chat_with_assistant route from app.py for more reliable test case updating
 @app.route("/chat_with_assistant", methods=["POST"])
 @login_required
 @limiter.limit("10 per minute")
@@ -1079,7 +1111,40 @@ def chat_with_assistant():
     
     username = session["user"]
     
-    print(f"Chat request received. Direct mode: {direct_mode}, Active history ID: {active_history_id}")
+    # Enhanced logging
+    print(f"Chat request received from user: {username}")
+    print(f"Message: {user_message[:100]}..." if len(user_message) > 100 else f"Message: {user_message}")
+    print(f"Direct mode: {direct_mode}, Active history ID: {active_history_id}")
+    
+    # Check API key early
+    try:
+        api_key = get_user_api_key(username, project_id)
+        if api_key:
+            # Mask most of the key for security
+            masked_key = f"{api_key[:8]}...{api_key[-4:]}" if len(api_key) > 12 else "***masked***"
+            print(f"Using API key: {masked_key}")
+        else:
+            error_msg = "No API key available"
+            print(f"ERROR: {error_msg}")
+            return Response(
+                f"data: {json.dumps({'error': error_msg})}\n\n", 
+                content_type="text/event-stream",
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive'
+                }
+            )
+    except Exception as e:
+        error_msg = f"Error retrieving API key: {str(e)}"
+        print(f"ERROR: {error_msg}")
+        return Response(
+            f"data: {json.dumps({'error': error_msg})}\n\n", 
+            content_type="text/event-stream",
+            headers={
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive'
+            }
+        )
     
     # Create a more direct instruction for the AI to modify test cases
     if direct_mode:
@@ -1131,21 +1196,41 @@ def chat_with_assistant():
     
     def generate():
         try:
+            # First, try to initialize the Anthropic client
+            try:
+                anthropic_client = get_anthropic_client(username, project_id)
+            except Exception as client_error:
+                error_msg = f"Error initializing AI client: {str(client_error)}"
+                print(f"ERROR: {error_msg}")
+                yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+                
             full_response = ""
-            anthropic_client = get_anthropic_client(username, project_id)
+            print("Starting AI stream processing...")
             
-            messages = [{"role": "user", "content": context}]
-            
-            with anthropic_client.messages.stream(
-                model="claude-3-haiku-20240307",
-                max_tokens=4000,
-                messages=messages
-            ) as stream:
-                for event in stream:
-                    if event.type == "content_block_delta":
-                        if event.delta.text:
-                            full_response += event.delta.text
-                            yield f"data: {json.dumps({'chunk': event.delta.text})}\n\n"
+            try:
+                # Stream processing
+                messages = [{"role": "user", "content": context}]
+                
+                with anthropic_client.messages.stream(
+                    model="claude-3-haiku-20240307",
+                    max_tokens=4000,
+                    messages=messages
+                ) as stream:
+                    for event in stream:
+                        if event.type == "content_block_delta":
+                            if event.delta.text:
+                                full_response += event.delta.text
+                                yield f"data: {json.dumps({'chunk': event.delta.text})}\n\n"
+                
+                print("AI stream completed successfully")
+            except Exception as stream_error:
+                error_msg = f"Error during AI streaming: {str(stream_error)}"
+                print(f"ERROR: {error_msg}")
+                yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
             
             # Extract test cases from response if present
             updated_test_cases = None
@@ -1165,18 +1250,30 @@ def chat_with_assistant():
                         "source_message": user_message
                     }
                     
-                    # If active_history_id is provided, try to update that entry
-                    if active_history_id:
-                        try:
-                            # Update existing history entry
-                            history_collection.update_one(
-                                {"_id": ObjectId(active_history_id)},
-                                {"$set": update_data}
-                            )
-                            print(f"Updated existing history item: {active_history_id}")
-                        except Exception as e:
-                            print(f"Update failed, creating new entry instead: {str(e)}")
-                            # Fallback to creating a new entry
+                    try:
+                        # If active_history_id is provided, try to update that entry
+                        if active_history_id:
+                            try:
+                                # Update existing history entry
+                                history_collection.update_one(
+                                    {"_id": ObjectId(active_history_id)},
+                                    {"$set": update_data}
+                                )
+                                print(f"Updated existing history item: {active_history_id}")
+                            except Exception as e:
+                                print(f"Update failed, creating new entry instead: {str(e)}")
+                                # Fallback to creating a new entry
+                                update_data.update({
+                                    "user": username,
+                                    "requirements": requirements,
+                                    "context": "",
+                                    "project_id": project_id,
+                                    "requirement_id": requirement_id,
+                                    "requirement_title": requirement_title
+                                })
+                                history_collection.insert_one(update_data)
+                        else:
+                            # Create new history entry if no active_history_id
                             update_data.update({
                                 "user": username,
                                 "requirements": requirements,
@@ -1186,48 +1283,54 @@ def chat_with_assistant():
                                 "requirement_title": requirement_title
                             })
                             history_collection.insert_one(update_data)
-                    else:
-                        # Create new history entry if no active_history_id
-                        update_data.update({
-                            "user": username,
-                            "requirements": requirements,
-                            "context": "",
-                            "project_id": project_id,
-                            "requirement_id": requirement_id,
-                            "requirement_title": requirement_title
-                        })
-                        history_collection.insert_one(update_data)
-                    
-                    # Send updated test cases and confirmation to the client
-                    yield f"data: {json.dumps({
-                        'updated_test_cases': updated_test_cases,
-                        'confirmation': 'Modifications appliquées.'
-                    })}\n\n"
-                    
-                    print("Saved updated test cases to history")
+                        
+                        # Send updated test cases and confirmation to the client
+                        yield f"data: {json.dumps({
+                            'updated_test_cases': updated_test_cases,
+                            'confirmation': 'Modifications appliquées.'
+                        })}\n\n"
+                        
+                        print("Saved updated test cases to history")
+                    except Exception as db_error:
+                        error_msg = f"Error saving test cases to database: {str(db_error)}"
+                        print(f"ERROR: {error_msg}")
+                        # Still send the updated test cases to the client even if DB save fails
+                        yield f"data: {json.dumps({
+                            'updated_test_cases': updated_test_cases,
+                            'confirmation': 'Modifications appliquées, mais erreur de sauvegarde.'
+                        })}\n\n"
             
-            # Save the chat interaction to history
-            history_collection.insert_one({
-                "user": username,
-                "type": "ai_chat",
-                "message": user_message,
-                "response": full_response,
-                "timestamp": datetime.now(timezone.utc),
-                "project_id": project_id,
-                "requirement_id": requirement_id
-            })
+            try:
+                # Save the chat interaction to history
+                history_collection.insert_one({
+                    "user": username,
+                    "type": "ai_chat",
+                    "message": user_message,
+                    "response": full_response,
+                    "timestamp": datetime.now(timezone.utc),
+                    "project_id": project_id,
+                    "requirement_id": requirement_id
+                })
+            except Exception as history_error:
+                print(f"Error saving chat history: {str(history_error)}")
+                # This is not critical, so we continue without sending an error to the client
             
             yield "data: [DONE]\n\n"
             
         except Exception as e:
-            print(f"Error in chat assistant: {e}")
+            print(f"Unexpected error in chat assistant: {e}")
+            import traceback
+            traceback.print_exc()
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             yield "data: [DONE]\n\n"
     
-    return Response(generate(), content_type="text/event-stream", headers={
+    # Ensure appropriate CORS headers for streaming responses
+    response = Response(generate(), content_type="text/event-stream", headers={
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive'
     })
+    
+    return response
 @app.route("/history", methods=["GET"])
 @login_required
 @limiter.exempt
