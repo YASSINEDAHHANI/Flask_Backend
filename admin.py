@@ -6,7 +6,6 @@ from bson import ObjectId
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
-# These will be initialized when the blueprint is registered
 users_collection = None
 projects_collection = None
 collaborators_collection = None
@@ -82,7 +81,6 @@ def create_user():
     new_user = {
         "username": data["username"],
         "password": data["password"],
-        "email": data.get("email", data["username"]),
         "role": data.get("role", "user"),
         "created_at": datetime.now(timezone.utc),
         "created_by": session["user"]
@@ -119,8 +117,8 @@ def update_user(user_id):
         update_data = {}
         
         # Allow updating certain fields
-        if "email" in data:
-            update_data["email"] = data["email"]
+        if "username" in data:
+            update_data["username"] = data["username"]
         if "role" in data:
             update_data["role"] = data["role"]
         if "password" in data:
