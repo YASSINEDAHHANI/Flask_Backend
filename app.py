@@ -19,12 +19,20 @@ import base64
 from admin import admin_bp
 import re
 import io
-
+from io import BytesIO
+from flask import send_file
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from docx import Document
+from docx.shared import Inches, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 import admin
 
 load_dotenv()
 
-# Custom JSON encoder to handle MongoDB ObjectId
 class MongoJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, ObjectId):
@@ -63,7 +71,7 @@ limiter = Limiter(
 
 
 # MongoDB setup
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017/")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 mongo_client = MongoClient(MONGO_URI)
 db = mongo_client["chat_app"]
 history_collection = db["chat_history"]
@@ -885,9 +893,7 @@ def save_test_cases():
         "timestamp": current_time.isoformat()
     })
 
-@app.route("/test", methods=["GET"])
-def test_endpoint():
-    return jsonify({"message": "API is working!"})
+
 
 @app.route("/generate_test_cases", methods=["POST", "OPTIONS"])
 def generate_test_cases_endpoint():
@@ -1093,7 +1099,6 @@ def generate_test_cases_for_requirement():
     
     return Response(generate(), content_type="text/event-stream")
 
-# Modified chat_with_assistant route from app.py for more reliable test case updating
 @app.route("/chat_with_assistant", methods=["POST"])
 @login_required
 @limiter.limit("10 per minute")
@@ -1512,6 +1517,332 @@ def extract_text():
     except Exception as e:
         print(f"Error extracting text: {str(e)}")
         return jsonify({"error": f"Failed to extract text: {str(e)}"}), 500
+@app.route("/download_requirements/<format>", methods=["POST"])
+@login_required
+def download_requirements(format):
+    """
+    Generate a file with the requirements in the specified format (PDF or DOCX)
+    """
+    data = request.json
+    requirements = data.get("requirements", [])
+    project_name = data.get("project_name", "Projet")
+    format_date = datetime.now().strftime("%Y-%m-%d")
+    file_name = f"exigences_{project_name.replace(' ', '_')}_{format_date}"
+    
+    if not requirements:
+        return jsonify({"error": "No requirements provided"}), 400
+    
+    username = session["user"]
+    
+    # Define helper functions for category and status labels
+    def get_category_label(category):
+        category_map = {
+            "functionality": "Fonctionnalité",
+            "ui": "Interface utilisateur",
+            "security": "Sécurité",
+            "performance": "Performance",
+            "usability": "Utilisabilité",
+            "compatibility": "Compatibilité",
+            "accessibility": "Accessibilité"
+        }
+        return category_map.get(category, category)
+    
+    def get_priority_label(priority):
+        priority_map = {
+            "high": "Haute",
+            "medium": "Moyenne",
+            "low": "Basse"
+        }
+        return priority_map.get(priority, priority)
+    
+    def get_status_label(status):
+        status_map = {
+            "approved": "Approuvé",
+            "in-review": "En revue",
+            "draft": "Brouillon"
+        }
+        return status_map.get(status, status)
+    
+    if format == "pdf":
+        # Generate PDF using ReportLab
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=72,
+            leftMargin=72,
+            topMargin=72,
+            bottomMargin=72
+        )
+        
+        # Define styles
+        styles = getSampleStyleSheet()
+        title_style = styles["Title"]
+        heading_style = styles["Heading2"]
+        normal_style = styles["Normal"]
+        
+        # Create custom styles
+        label_style = ParagraphStyle(
+            name='LabelStyle',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=9,
+            spaceAfter=2
+        )
+        
+        content_style = ParagraphStyle(
+            name='ContentStyle',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=9,
+            leftIndent=10,
+            spaceAfter=10
+        )
+        
+        # Build the document content
+        elements = []
+        
+        # Add title
+        elements.append(Paragraph(f"Exigences: {project_name}", title_style))
+        elements.append(Paragraph(f"Date: {format_date}", normal_style))
+        elements.append(Spacer(1, 0.2*inch))
+        
+        # Add each requirement
+        for req in requirements:
+            # Requirement title and metadata in a frame
+            elements.append(Paragraph(req.get("title", ""), heading_style))
+            
+            # Category, Priority, Status
+            elements.append(Paragraph("Catégorie:", label_style))
+            elements.append(Paragraph(get_category_label(req.get("category", "")), content_style))
+            
+            elements.append(Paragraph("Priorité:", label_style))
+            elements.append(Paragraph(get_priority_label(req.get("priority", "")), content_style))
+            
+            elements.append(Paragraph("Statut:", label_style))
+            elements.append(Paragraph(get_status_label(req.get("status", "")), content_style))
+            
+            # Description
+            elements.append(Paragraph("Description:", label_style))
+            elements.append(Paragraph(req.get("description", ""), content_style))
+            
+            elements.append(Spacer(1, 0.2*inch))
+        
+        # Build and save the PDF
+        doc.build(elements)
+        
+        buffer.seek(0)
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=f"{file_name}.pdf",
+            mimetype="application/pdf"
+        )
+    
+    elif format == "docx":
+        # Generate DOCX using python-docx
+        doc = Document()
+        
+        # Add document title
+        title = doc.add_heading(f"Exigences: {project_name}", level=0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Add date
+        date_paragraph = doc.add_paragraph(f"Date: {format_date}")
+        date_paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        doc.add_paragraph()  # Add spacing
+        
+        for req in requirements:
+            # Requirement title
+            doc.add_heading(req.get("title", ""), level=1)
+            
+            table = doc.add_table(rows=1, cols=2)
+            table.style = 'Table Grid'
+            table.autofit = True
+            
+            header_cells = table.rows[0].cells
+            header_cells[0].text = "Métadonnée"
+            header_cells[1].text = "Valeur"
+            
+            row_cells = table.add_row().cells
+            row_cells[0].text = "Catégorie"
+            row_cells[1].text = get_category_label(req.get("category", ""))
+            
+            row_cells = table.add_row().cells
+            row_cells[0].text = "Priorité"
+            row_cells[1].text = get_priority_label(req.get("priority", ""))
+            
+            row_cells = table.add_row().cells
+            row_cells[0].text = "Statut"
+            row_cells[1].text = get_status_label(req.get("status", ""))
+            
+            doc.add_paragraph().add_run("Description:").bold = True
+            doc.add_paragraph(req.get("description", ""))
+            
+            doc.add_paragraph()
+        
+        buffer = BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+        
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=f"{file_name}.docx",
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+    
+    else:
+        return jsonify({"error": f"Unsupported format: {format}"}), 400
+# Add this new endpoint to app.py
+
+@app.route("/export_test_cases", methods=["POST"])
+@login_required
+def export_test_cases():
+    """
+    Generate a file with test cases in the specified format (PDF or DOCX)
+    """
+    data = request.json
+    test_cases = data.get("test_cases", "")
+    format_type = data.get("format", "pdf")  # 'pdf' or 'docx'
+    project_id = data.get("project_id", "")
+    requirement_id = data.get("requirement_id", "")
+    requirement_title = data.get("requirement_title", "Test Cases")
+    
+    if not test_cases:
+        return jsonify({"error": "No test cases provided"}), 400
+    
+    username = session["user"]
+    format_date = datetime.now().strftime("%Y-%m-%d")
+    
+    # Sanitize filename
+    safe_title = requirement_title.replace(" ", "_").replace("/", "_").replace("\\", "_")
+    file_name = f"test_cases_{safe_title}_{format_date}"
+    
+    # Verify project access if project_id is provided
+    if project_id:
+        project = projects_collection.find_one({
+            "id": project_id,
+            "$or": [
+                {"user": username},
+                {"collaborators": username}
+            ]
+        })
+        
+        if not project:
+            return jsonify({"error": "Project not found or access denied"}), 403
+    
+    # Process based on format type
+    if format_type == "pdf":
+        try:
+            # Generate PDF using ReportLab
+            buffer = BytesIO()
+            doc = SimpleDocTemplate(
+                buffer,
+                pagesize=A4,
+                rightMargin=42,
+                leftMargin=42,
+                topMargin=42,
+                bottomMargin=42
+            )
+            
+            # Define styles
+            styles = getSampleStyleSheet()
+            title_style = styles["Title"]
+            normal_style = ParagraphStyle(
+                name='TestCaseStyle',
+                parent=styles['Normal'],
+                fontName='Courier',
+                fontSize=9,
+                leading=12,
+                spaceAfter=10
+            )
+            
+            # Build the document content
+            elements = []
+            
+            # Add title
+            elements.append(Paragraph(f"Test Cases: {requirement_title}", title_style))
+            elements.append(Paragraph(f"Date: {format_date}", styles["Normal"]))
+            elements.append(Spacer(1, 0.2*inch))
+            
+            # Process the test cases text, preserving formatting
+            # Split by lines and process each line
+            test_case_lines = test_cases.split('\n')
+            formatted_lines = []
+            
+            for line in test_case_lines:
+                # Escape special characters for ReportLab
+                escaped_line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                
+                # Preserve indentation by replacing spaces with non-breaking spaces
+                # Count leading spaces
+                leading_spaces = len(line) - len(line.lstrip(' '))
+                if leading_spaces > 0:
+                    spaces = '&nbsp;' * leading_spaces
+                    escaped_line = spaces + escaped_line[leading_spaces:]
+                
+                formatted_lines.append(escaped_line)
+            
+            # Join lines with HTML line breaks
+            formatted_text = '<br/>'.join(formatted_lines)
+            elements.append(Paragraph(formatted_text, normal_style))
+            
+            # Build and save the PDF
+            doc.build(elements)
+            
+            buffer.seek(0)
+            return send_file(
+                buffer,
+                as_attachment=True,
+                download_name=f"{file_name}.pdf",
+                mimetype="application/pdf"
+            )
+            
+        except Exception as e:
+            print(f"Error generating PDF: {str(e)}")
+            return jsonify({"error": f"Failed to generate PDF: {str(e)}"}), 500
+            
+    elif format_type == "docx":
+        try:
+            # Generate DOCX using python-docx
+            doc = Document()
+            
+            # Add document title
+            title = doc.add_heading(f"Test Cases: {requirement_title}", level=1)
+            title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # Add date
+            date_paragraph = doc.add_paragraph(f"Date: {format_date}")
+            date_paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            
+            doc.add_paragraph()  # Add spacing
+            
+            # Add test cases with monospaced font to preserve formatting
+            test_case_para = doc.add_paragraph()
+            test_case_run = test_case_para.add_run(test_cases)
+            test_case_run.font.name = 'Courier New'
+            test_case_run.font.size = Pt(9)
+            
+            # Save to buffer
+            buffer = BytesIO()
+            doc.save(buffer)
+            buffer.seek(0)
+            
+            return send_file(
+                buffer,
+                as_attachment=True,
+                download_name=f"{file_name}.docx",
+                mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+            
+        except Exception as e:
+            print(f"Error generating DOCX: {str(e)}")
+            return jsonify({"error": f"Failed to generate DOCX: {str(e)}"}), 500
+    
+    else:
+        return jsonify({"error": f"Unsupported format: {format_type}"}), 400
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Credentials', 'true')
