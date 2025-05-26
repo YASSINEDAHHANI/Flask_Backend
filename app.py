@@ -155,7 +155,28 @@ def decrypt_api_key(encrypted_key):
     except Exception as e:
         print(f"Error decrypting API key: {e}")
         return None
-    
+#Manager Profile
+def is_manager_or_admin(username):
+    """Check if a user has manager or admin role"""
+    user = users_collection.find_one({"username": username})
+    return user and user.get("role") in ["manager", "admin"]
+
+def can_create_projects(username):
+    """Check if a user can create projects (manager or admin only)"""
+    return is_manager_or_admin(username)
+
+def manager_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if "user" not in session:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        if not is_manager_or_admin(session["user"]):
+            return jsonify({"error": "Manager or admin access required"}), 403
+            
+        return f(*args, **kwargs)
+    return decorated_function
+
 def get_user_api_key(username, project_id=None):
     """Get a user's API key, with optional project-specific override."""
     # First try to get a project-specific key if project_id is provided
@@ -311,7 +332,6 @@ Format:
 """
     return instruction
 
-# Auth Endpoints
 @app.route("/login", methods=["POST"])
 def login():
     data = request.json
@@ -327,7 +347,9 @@ def login():
             "username": username,
             "email": user.get("email") or username,
             "role": user.get("role", "user"),
-            "is_admin": user.get("role") == "admin"
+            "is_admin": user.get("role") == "admin",
+            "is_manager": user.get("role") in ["manager", "admin"],
+            "can_create_projects": user.get("role") in ["manager", "admin"]
         })
     return jsonify({"error": "Invalid credentials"}), 401
 
@@ -351,7 +373,9 @@ def check_session():
                 "username": session["user"],
                 "email": user.get("email") or session["user"],
                 "role": user.get("role", "user"),
-                "is_admin": user.get("role") == "admin"
+                "is_admin": user.get("role") == "admin",
+                "is_manager": user.get("role") in ["manager", "admin"],
+                "can_create_projects": user.get("role") in ["manager", "admin"]
             }), 200
     return jsonify({"logged_in": False, "error": "Not authenticated"}), 401
 
@@ -560,27 +584,39 @@ def remove_collaborator(project_id, collaborator_username):
     
     return jsonify({"message": "Collaborator removed successfully"})
 
-# Project Management
 @app.route("/projects", methods=["GET"])
 @login_required
 def get_projects():
     username = session["user"]
+    user = users_collection.find_one({"username": username})
+    user_role = user.get("role", "user") if user else "user"
     
-    projects = list(projects_collection.find({
-        "$or": [
-            {"user": username},
-            {"collaborators": username}
-        ]
-    }))
+    # Managers and admins can see all projects they own or collaborate on
+    # Regular users can only see projects where they are collaborators
+    if user_role in ["manager", "admin"]:
+        projects = list(projects_collection.find({
+            "$or": [
+                {"user": username},
+                {"collaborators": username}
+            ]
+        }))
+    else:
+        # Regular users only see projects where they are collaborators
+        projects = list(projects_collection.find({
+            "collaborators": username
+        }))
     
     for project in projects:
         project["_id"] = str(project["_id"])
         project["is_owner"] = project["user"] == username
+        project["user_role"] = user_role
     
-    return jsonify({"projects": projects})
+    return jsonify({"projects": projects, "can_create_projects": user_role in ["manager", "admin"]})
+
 
 @app.route("/projects", methods=["POST"])
 @login_required
+@manager_required
 def create_project():
     data = request.json
     username = session["user"]
@@ -591,7 +627,8 @@ def create_project():
         "name": data.get("name"),
         "context": data.get("context", ""),
         "collaborators": [],
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by_role": "manager"  # Track that this was created by a manager
     }
     
     # Insert the project and get the _id
@@ -599,28 +636,107 @@ def create_project():
     
     # Create a copy of the project to return
     response_project = project.copy()
-    response_project["_id"] = str(result.inserted_id)  # Convert ObjectId to string
+    response_project["_id"] = str(result.inserted_id)
     
     return jsonify({"message": "Project created", "project": response_project})
+#######################Manager only#######################
+@app.route("/projects/create_with_users", methods=["POST"])
+@login_required
+@manager_required
+def create_project_with_users():
+    data = request.json
+    username = session["user"]
+    
+    project_name = data.get("name")
+    project_context = data.get("context", "")
+    assigned_users = data.get("assigned_users", [])  # List of usernames to assign as collaborators
+    
+    if not project_name:
+        return jsonify({"error": "Project name is required"}), 400
+    
+    # Validate that all assigned users exist
+    for user_email in assigned_users:
+        user = users_collection.find_one({"username": user_email})
+        if not user:
+            return jsonify({"error": f"User '{user_email}' not found"}), 400
+        if user.get("role") in ["manager", "admin"]:
+            return jsonify({"error": f"Cannot assign manager/admin '{user_email}' as collaborator"}), 400
+    
+    project = {
+        "id": str(uuid.uuid4()),
+        "user": username,
+        "name": project_name,
+        "context": project_context,
+        "collaborators": assigned_users,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by_role": "manager"
+    }
+    
+    # Insert the project
+    result = projects_collection.insert_one(project)
+    project_id = project["id"]
+    
+    # Add collaborator records for each assigned user
+    for user_email in assigned_users:
+        collaborators_collection.insert_one({
+            "project_id": project_id,
+            "username": user_email,
+            "email": user_email,
+            "added_by": username,
+            "added_at": datetime.now(timezone.utc),
+            "assigned_by_manager": True
+        })
+    
+    # Create response project
+    response_project = project.copy()
+    response_project["_id"] = str(result.inserted_id)
+    
+    return jsonify({
+        "message": f"Project created and assigned to {len(assigned_users)} users",
+        "project": response_project
+    })
 
+# Add endpoint to get all regular users for project assignment
+@app.route("/users/regular", methods=["GET"])
+@login_required
+@manager_required
+def get_regular_users():
+    """Get all users with 'user' role for project assignment"""
+    users = list(users_collection.find(
+        {"role": {"$nin": ["manager", "admin"]}},
+        {"username": 1, "email": 1, "role": 1, "_id": 0}
+    ))
+    
+    return jsonify({"users": users})
+####################################################
 @app.route("/projects/<project_id>", methods=["GET"])
 @login_required
 def get_project(project_id):
     username = session["user"]
+    user = users_collection.find_one({"username": username})
+    user_role = user.get("role", "user") if user else "user"
     
-    project = projects_collection.find_one({
-        "id": project_id,
-        "$or": [
-            {"user": username},
-            {"collaborators": username}
-        ]
-    })
+    # Check access based on role
+    if user_role in ["manager", "admin"]:
+        project = projects_collection.find_one({
+            "id": project_id,
+            "$or": [
+                {"user": username},
+                {"collaborators": username}
+            ]
+        })
+    else:
+        project = projects_collection.find_one({
+            "id": project_id,
+            "collaborators": username
+        })
     
     if not project:
         return jsonify({"error": "Project not found or access denied"}), 404
     
     project["_id"] = str(project["_id"])
     project["is_owner"] = project["user"] == username
+    project["user_role"] = user_role
     
     return jsonify({"project": project})
 
@@ -677,14 +793,25 @@ def delete_project(project_id):
 @login_required
 def get_requirements(project_id):
     username = session["user"]
+    user = users_collection.find_one({"username": username})
+    user_role = user.get("role", "user") if user else "user"
     
-    project = projects_collection.find_one({
-        "id": project_id,
-        "$or": [
-            {"user": username},
-            {"collaborators": username}
-        ]
-    })
+    # Check access based on role
+    if user_role in ["manager", "admin"]:
+        # Managers and admins can access projects they own or collaborate on
+        project = projects_collection.find_one({
+            "id": project_id,
+            "$or": [
+                {"user": username},
+                {"collaborators": username}
+            ]
+        })
+    else:
+        # Regular users can only access projects where they are collaborators
+        project = projects_collection.find_one({
+            "id": project_id,
+            "collaborators": username
+        })
     
     if not project:
         return jsonify({"error": "Project not found or access denied"}), 404
@@ -697,7 +824,6 @@ def get_requirements(project_id):
         req["_id"] = str(req["_id"])
     
     return jsonify({"requirements": requirements})
-
 @app.route("/projects/<project_id>/requirements", methods=["POST"])
 @login_required
 def create_requirement(project_id):
