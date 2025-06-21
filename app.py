@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 import base64
 from admin import admin_bp
+from manager import manager_bp
 import re
 import io
 from io import BytesIO
@@ -30,6 +31,7 @@ from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import admin
+import manager
 
 load_dotenv()
 
@@ -43,7 +45,7 @@ class MongoJSONEncoder(json.JSONEncoder):
 
 app = Flask(__name__)
 app.register_blueprint(admin_bp)
-
+app.register_blueprint(manager_bp)
 # Configure Flask to use our custom JSON encoder
 app.json_encoder = MongoJSONEncoder
 app.secret_key = os.getenv("SECRET_KEY", "supersecret")
@@ -86,6 +88,12 @@ admin.users_collection = users_collection
 admin.projects_collection = projects_collection
 admin.collaborators_collection = collaborators_collection
 admin.api_keys_collection = api_keys_collection
+
+manager.users_collection = users_collection
+manager.projects_collection = projects_collection
+manager.collaborators_collection = collaborators_collection
+manager.requirements_collection = requirements_collection
+manager.api_keys_collection = api_keys_collection
 # Create indexes
 history_collection.create_index([("user", 1)])
 history_collection.create_index([("timestamp", -1)])
@@ -639,76 +647,8 @@ def create_project():
     response_project["_id"] = str(result.inserted_id)
     
     return jsonify({"message": "Project created", "project": response_project})
-#######################Manager only#######################
-@app.route("/projects/create_with_users", methods=["POST"])
-@login_required
-@manager_required
-def create_project_with_users():
-    data = request.json
-    username = session["user"]
-    
-    project_name = data.get("name")
-    project_context = data.get("context", "")
-    assigned_users = data.get("assigned_users", [])  # List of usernames to assign as collaborators
-    
-    if not project_name:
-        return jsonify({"error": "Project name is required"}), 400
-    
-    # Validate that all assigned users exist
-    for user_email in assigned_users:
-        user = users_collection.find_one({"username": user_email})
-        if not user:
-            return jsonify({"error": f"User '{user_email}' not found"}), 400
-        if user.get("role") in ["manager", "admin"]:
-            return jsonify({"error": f"Cannot assign manager/admin '{user_email}' as collaborator"}), 400
-    
-    project = {
-        "id": str(uuid.uuid4()),
-        "user": username,
-        "name": project_name,
-        "context": project_context,
-        "collaborators": assigned_users,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "created_by_role": "manager"
-    }
-    
-    # Insert the project
-    result = projects_collection.insert_one(project)
-    project_id = project["id"]
-    
-    # Add collaborator records for each assigned user
-    for user_email in assigned_users:
-        collaborators_collection.insert_one({
-            "project_id": project_id,
-            "username": user_email,
-            "email": user_email,
-            "added_by": username,
-            "added_at": datetime.now(timezone.utc),
-            "assigned_by_manager": True
-        })
-    
-    # Create response project
-    response_project = project.copy()
-    response_project["_id"] = str(result.inserted_id)
-    
-    return jsonify({
-        "message": f"Project created and assigned to {len(assigned_users)} users",
-        "project": response_project
-    })
 
-# Add endpoint to get all regular users for project assignment
-@app.route("/users/regular", methods=["GET"])
-@login_required
-@manager_required
-def get_regular_users():
-    """Get all users with 'user' role for project assignment"""
-    users = list(users_collection.find(
-        {"role": {"$nin": ["manager", "admin"]}},
-        {"username": 1, "email": 1, "role": 1, "_id": 0}
-    ))
-    
-    return jsonify({"users": users})
-####################################################
+
 @app.route("/projects/<project_id>", methods=["GET"])
 @login_required
 def get_project(project_id):
