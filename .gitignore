@@ -1,15 +1,11 @@
-.env
+.env                  
+*.log                 
 
-*.log
+chroma_db_local/      
+local_rag_system.py  
 
-chroma_db_local/
-local_rag_system.py
+__pycache__/          
 
-__pycache__/
-*.py[cod]
-*.pyo
 
-venv/
-
-node_modules/
-
+venv/                
+node_modules/        
