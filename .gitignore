@@ -1,4 +1,15 @@
 .env
-rag_system.log
-chroma_db_local
+
+*.log
+
+chroma_db_local/
 local_rag_system.py
+
+__pycache__/
+*.py[cod]
+*.pyo
+
+venv/
+
+node_modules/
+
