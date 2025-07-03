@@ -38,6 +38,7 @@ import anthropic
 import json
 from datetime import datetime, timezone
 import os
+from flask_cors import CORS, cross_origin
 
 try:
     from local_rag_system import LocalRAGSystem
@@ -62,11 +63,9 @@ class MongoJSONEncoder(json.JSONEncoder):
 app = Flask(__name__)
 app.register_blueprint(admin_bp)
 app.register_blueprint(manager_bp)
-# Configure Flask to use our custom JSON encoder
 app.json_encoder = MongoJSONEncoder
 app.secret_key = os.getenv("SECRET_KEY", "supersecret")
 
-# Session configuration
 app.config.update(
     SESSION_COOKIE_NAME="flask_session",
     SESSION_COOKIE_SECURE=False,
@@ -110,6 +109,7 @@ manager.projects_collection = projects_collection
 manager.collaborators_collection = collaborators_collection
 manager.requirements_collection = requirements_collection
 manager.api_keys_collection = api_keys_collection
+project_settings_collection = db["project_settings"]
 
 # Global variable for Local RAG System
 local_rag_system = None
@@ -183,6 +183,11 @@ api_keys_collection.create_index([("user", 1)])
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        # Handle OPTIONS requests FIRST - before checking authentication
+        if request.method == "OPTIONS":
+            return "", 200
+        
+        # Then check authentication for actual requests
         if "user" not in session:
             return jsonify({"error": "Unauthorized"}), 401
         return f(*args, **kwargs)
@@ -547,16 +552,12 @@ def delete_api_key(key_id):
     return jsonify({"message": "API key deleted successfully"})
 
 # Main test case generation endpoint with fallback to local RAG
+# Replace the existing generate_test_cases_endpoint_enhanced with this updated version
+
 @app.route("/generate_test_cases", methods=["POST", "OPTIONS"])
-def generate_test_cases_endpoint_enhanced():
-    """Enhanced test case generation using user settings"""
-    if request.method == "OPTIONS":
-        return "", 200
-    
-    # Check login
-    if "user" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-    
+@login_required
+def generate_test_cases():
+    """Generate test cases using project-level LLM settings"""
     try:
         data = request.json
         requirements = data.get("requirements", "")
@@ -567,8 +568,6 @@ def generate_test_cases_endpoint_enhanced():
         requirement_id = data.get("requirement_id", "")
         requirement_title = data.get("requirement_title", "")
         
-        # Remove manual ai_service selection - use user settings instead
-        
         if not requirements:
             return jsonify({"error": "No requirements provided"}), 400
         
@@ -577,37 +576,27 @@ def generate_test_cases_endpoint_enhanced():
         print(f"Generating test cases for user: {username}")
         print(f"Project ID: {project_id}")
         
-        # Determine which AI service to use based on user settings
-        effective_service = get_effective_llm_service(username, project_id)
+        # Determine which AI service to use based on PROJECT settings
+        effective_service = get_effective_llm_for_project(project_id) if project_id else None
         
         if not effective_service:
-            claude_available = bool(get_user_api_key_from_settings(username, project_id))
-            local_rag_available = check_rag_availability()
-            
-            if not claude_available and not local_rag_available:
+            if not project_id:
                 return jsonify({
-                    "error": "No AI service available.",
-                    "suggestion": "Please configure your Claude API key in Settings or ensure Local RAG is running.",
+                    "error": "No project specified.",
+                    "suggestion": "Please select a project to generate test cases.",
                     "details": {
-                        "claude_available": False,
-                        "local_rag_available": False,
-                        "action_required": "Configure API key or Local RAG"
-                    }
-                }), 400
-            elif not claude_available:
-                return jsonify({
-                    "error": "Claude API not available.",
-                    "suggestion": "Please add your Claude API key in Settings to use Claude AI.",
-                    "details": {
-                        "claude_available": False,
-                        "local_rag_available": local_rag_available,
-                        "action_required": "Add Claude API key"
+                        "project_configured": False,
+                        "action_required": "Select project"
                     }
                 }), 400
             else:
                 return jsonify({
-                    "error": "No AI service available.",
-                    "suggestion": "Please check your AI service configuration in Settings."
+                    "error": "No AI service configured for this project.",
+                    "suggestion": "Please ask your project manager to configure the LLM settings for this project.",
+                    "details": {
+                        "project_configured": False,
+                        "action_required": "Contact project manager"
+                    }
                 }), 400
         
         print(f"Using AI Service: {effective_service}")
@@ -615,106 +604,220 @@ def generate_test_cases_endpoint_enhanced():
         
         # Generate test cases based on effective service
         if effective_service == "claude":
-            try:
-                api_key = get_user_api_key_from_settings(username, project_id)
-                if not api_key:
-                    raise ValueError("No Claude API key available")
-                
-                # Create Anthropic client
-                anthropic_client = anthropic.Anthropic(api_key=api_key)
-                
-                # Generate the test case prompt
-                test_case_instruction = generate_test_case_prompt(requirements, format_type, context, example_case)
-                
-                # Call Claude API
-                response = anthropic_client.messages.create(
-                    model="claude-3-haiku-20240307",
-                    max_tokens=2000,
-                    messages=[{"role": "user", "content": test_case_instruction}]
-                )
-                
-                test_cases = response.content[0].text
-                
-                # Save to history
-                history_entry = {
-                    "user": username,
-                    "project_id": project_id,
-                    "requirement_id": requirement_id,
-                    "requirement_title": requirement_title,
-                    "requirements": requirements,
-                    "test_cases": test_cases,
-                    "format_type": format_type,
-                    "context": context,
-                    "example_case": example_case,
-                    "ai_service": "claude",
-                    "timestamp": datetime.now(timezone.utc)
-                }
-                
-                history_collection.insert_one(history_entry)
-                
+            api_key = get_project_api_key(project_id)
+            if not api_key:
                 return jsonify({
-                    "test_cases": test_cases,
-                    "service_used": "claude",
-                    "status": "success"
-                })
-                
-            except Exception as e:
-                print(f"Claude API error: {e}")
-                # Don't fallback if user explicitly chose Claude
-                return jsonify({
-                    "error": f"Claude API error: {str(e)}",
-                    "service_used": "claude",
-                    "status": "error"
-                }), 500
-        
-        elif effective_service == "local_rag":
-            try:
-                if not check_rag_availability():
-                    raise ValueError("Local RAG system not available")
-                
-                # Generate test cases using local RAG
-                test_cases = local_rag_system.generate_test_cases(requirements)
-                
-                # Save to history
-                history_entry = {
-                    "user": username,
-                    "project_id": project_id,
-                    "requirement_id": requirement_id,
-                    "requirement_title": requirement_title,
-                    "requirements": requirements,
-                    "test_cases": test_cases,
-                    "format_type": format_type,
-                    "context": context,
-                    "example_case": example_case,
-                    "ai_service": "local_rag",
-                    "timestamp": datetime.now(timezone.utc)
-                }
-                
-                history_collection.insert_one(history_entry)
-                
-                return jsonify({
-                    "test_cases": test_cases,
-                    "service_used": "local_rag",
-                    "status": "success"
-                })
-                
-            except Exception as e:
-                print(f"Local RAG error: {e}")
-                return jsonify({
-                    "error": f"Local RAG error: {str(e)}",
-                    "service_used": "local_rag",
-                    "status": "error"
-                }), 500
-        
+                    "error": "Claude API key not configured for this project.",
+                    "suggestion": "Please ask your project manager to add the Claude API key."
+                }), 400
+            
+            # Generate test cases using Claude with project API key
+            test_cases = generate_test_cases_claude(
+                requirements, format_type, context, example_case, 
+                requirement_id, requirement_title, api_key, project_id
+            )
         else:
-            return jsonify({
-                "error": "No AI service configured",
-                "suggestion": "Please configure your AI service preferences in Settings"
-            }), 400
+            # Generate test cases using local RAG
+           test_cases = generate_test_cases_rag(
+                requirements, format_type, context, example_case,
+                requirement_id, requirement_title, project_id
+            )
+        
+        return jsonify({
+            "test_cases": test_cases,
+            "service_used": effective_service,
+            "project_configured": True
+        })
         
     except Exception as e:
-        print(f"Error in test case generation: {e}")
+        print(f"Error generating test cases: {e}")
         return jsonify({"error": str(e)}), 500
+
+def generate_test_cases_claude(requirements, format_type, context, example_case, requirement_id, requirement_title, api_key, project_id=None):
+    """Generate test cases using Claude API with project-level API key"""
+    try:
+        # Create Anthropic client with project API key
+        anthropic_client = anthropic.Anthropic(api_key=api_key)
+        
+        # Generate the test case prompt
+        test_case_instruction = generate_test_case_prompt(requirements, format_type, context, example_case)
+        
+        # Call Claude API
+        response = anthropic_client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": test_case_instruction}]
+        )
+        
+        test_cases = response.content[0].text
+        
+        # Save to history with project context
+        username = session.get("user")
+        
+        history_entry = {
+            "user": username,
+            "project_id": project_id,  # Add this line
+            "requirement_id": requirement_id,
+            "requirement_title": requirement_title,
+            "requirements": requirements,
+            "test_cases": test_cases,
+            "format_type": format_type,
+            "context": context,
+            "example_case": example_case,
+            "ai_service": "claude",
+            "timestamp": datetime.now(timezone.utc),
+            "used_project_settings": True
+        }
+        
+        if history_collection is not None:
+            history_collection.insert_one(history_entry)
+        
+        return test_cases
+        
+    except Exception as e:
+        print(f"Claude API error: {e}")
+        raise Exception(f"Claude API error: {str(e)}")
+
+# Replace the generate_test_cases_rag function with this:
+
+def generate_test_cases_rag(requirements, format_type, context, example_case, requirement_id, requirement_title, project_id=None):
+    """Generate test cases using local RAG system"""
+    try:
+        if not check_rag_availability():
+            raise Exception("Local RAG system not available")
+        
+        # Create a formatted prompt that works with your RAG system
+        full_context = ""
+        if context:
+            full_context = f"Context: {context}\n\n"
+        
+        full_requirement = f"{full_context}Requirement: {requirements}"
+        
+        # Call your local RAG system with the correct method signature
+        test_cases = local_rag_system.generate_test_cases(full_requirement, context)
+        
+        # Save to history with project context
+        username = session.get("user")
+        
+        history_entry = {
+            "user": username,
+            "project_id": project_id,  # Add this line
+            "requirement_id": requirement_id,
+            "requirement_title": requirement_title,
+            "requirements": requirements,
+            "test_cases": test_cases,
+            "format_type": format_type,
+            "context": context,
+            "example_case": example_case,
+            "ai_service": "local_rag",
+            "timestamp": datetime.now(timezone.utc),
+            "used_project_settings": True
+        }
+        
+        if history_collection is not None:
+            history_collection.insert_one(history_entry)
+        
+        return test_cases
+        
+    except Exception as e:
+        print(f"Local RAG error: {e}")
+        raise Exception(f"Local RAG error: {str(e)}")
+
+
+def generate_test_case_prompt(requirements, format_type, context, example_case):
+    """Generate the prompt for test case generation"""
+    prompt = f"""Generate comprehensive test cases for the following software requirement:
+
+REQUIREMENT:
+{requirements}
+
+"""
+    
+    if context:
+        prompt += f"""CONTEXT:
+{context}
+
+"""
+    
+    if example_case:
+        prompt += f"""EXAMPLE TEST CASE FORMAT:
+{example_case}
+
+"""
+    
+    if format_type == "gherkin":
+        prompt += """Please format the test cases using Gherkin syntax (Given-When-Then).
+"""
+    elif format_type == "steps":
+        prompt += """Please format the test cases as numbered step-by-step instructions.
+"""
+    else:
+        prompt += """Please provide clear, detailed test cases.
+"""
+    
+    prompt += """
+Focus on:
+1. Both positive and negative test scenarios
+2. Edge cases and boundary conditions
+3. Clear, actionable test steps
+4. Expected results for each test case
+5. Prerequisites and test data requirements
+
+Provide at least 5-8 comprehensive test cases covering different scenarios."""
+    
+    return prompt
+
+# Additional helper functions that you might need to implement
+
+def track_project_context(project_id):
+    """Helper function to track current project context in session"""
+    if project_id:
+        session["current_project_id"] = project_id
+
+# You might want to add this to your project selection endpoints
+@app.route("/select_project/<project_id>", methods=["POST"])
+@login_required
+def select_project(project_id):
+    """Set the current project context for the user session"""
+    try:
+        username = session["user"]
+        
+        # Verify user has access to this project
+        project = projects_collection.find_one({"id": project_id})
+        if not project:
+            return jsonify({"error": "Project not found"}), 404
+        
+        # Check if user is owner or collaborator
+        user = users_collection.find_one({"username": username})
+        user_role = user.get("role", "user")
+        
+        if (user_role in ["manager", "admin"] and project["user"] == username) or \
+           (username in project.get("collaborators", [])):
+            
+            session["current_project_id"] = project_id
+            
+            # Get project LLM settings for frontend
+            project_settings = get_project_llm_settings(project_id)
+            effective_service = get_effective_llm_for_project(project_id)
+            
+            return jsonify({
+                "message": "Project selected successfully",
+                "project": {
+                    "id": project_id,
+                    "name": project.get("name"),
+                    "effective_service": effective_service,
+                    "has_llm_settings": bool(project_settings)
+                }
+            })
+        else:
+            return jsonify({"error": "Access denied to this project"}), 403
+            
+    except Exception as e:
+        print(f"Error selecting project: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# Update the main test case generation to use project context from request
+# instead of session if project_id is provided in the request data
 @app.route("/check_api_key_status", methods=["GET"])
 @login_required
 def check_api_key_status():
@@ -1966,60 +2069,37 @@ def update_user_settings(username, settings_data, project_id=None):
         return False
 
 def get_effective_llm_service(username, project_id=None):
-    """Determine which LLM service to use based on user settings and availability"""
+    """Determine which LLM service to use - now based on project settings"""
     try:
-        # Get user settings
-        settings = get_user_settings(username, project_id)
-        if not settings:
+        if project_id:
+            # Use project-level settings
+            return get_effective_llm_for_project(project_id)
+        else:
+            # For requests without project context, fall back to local
             return "local_rag" if check_rag_availability() else None
-        
-        llm_service = settings.get("llm_service", "auto")
-        
-        if llm_service == "claude":
-            # User explicitly wants Claude
-            api_key = get_user_api_key_from_settings(username, project_id, settings)
-            return "claude" if api_key else None
-            
-        elif llm_service == "local_rag":
-            # User explicitly wants Local RAG
-            return "local_rag" if check_rag_availability() else None
-            
-        else:  # llm_service == "auto"
-            # Auto mode: try Claude first, fallback to Local RAG
-            api_key = get_user_api_key_from_settings(username, project_id, settings)
-            if api_key:
-                return "claude"
-            elif check_rag_availability():
-                return "local_rag"
-            else:
-                return None
                 
     except Exception as e:
         print(f"Error determining effective LLM service: {e}")
         return None
 
 def get_user_api_key_from_settings(username, project_id=None, settings=None):
-    """Get API key considering user settings preferences"""
+    """Get API key - now from project settings instead of user settings"""
     try:
-        if not settings:
-            settings = get_user_settings(username, project_id)
-        
-        # If user has API key in settings and wants to use it
-        if settings and settings.get("claude_api_key"):
-            return settings["claude_api_key"]  # CHANGED: No decryption
-        
-        # Check if user wants to use project-specific key from old system
-        if settings and settings.get("use_project_key", False):
-            old_api_key = get_user_api_key(username, project_id)
-            if old_api_key:
-                return old_api_key
-        
-        # No fallback to environment variable anymore
-        return None
+        if project_id:
+            return get_project_api_key(project_id)
+        else:
+            # No project context, no API key available
+            return None
         
     except Exception as e:
-        print(f"Error getting API key from settings: {e}")
+        print(f"Error getting API key: {e}")
         return None
+                
+    except Exception as e:
+        print(f"Error determining effective LLM service: {e}")
+        return None
+
+
 @app.route("/user_settings", methods=["GET"])
 @login_required
 def get_user_settings_endpoint():
@@ -2457,8 +2537,289 @@ def delete_user_llm_settings_endpoint():
     except Exception as e:
         print(f"Error deleting user LLM settings: {e}")
         return jsonify({"error": str(e)}), 500
+def save_project_llm_settings(project_id, manager_username, llm_choice, api_key=None):
+    """Save LLM settings at project level - only managers can do this"""
+    try:
+        # Verify manager permissions
+        user = users_collection.find_one({"username": manager_username})
+        if not user or user.get("role") not in ["manager", "admin"]:
+            return False, "Only managers can configure project LLM settings"
+        
+        # Verify manager owns the project
+        project = projects_collection.find_one({"id": project_id})
+        if not project:
+            return False, "Project not found"
+        
+        if user.get("role") != "admin" and project["user"] != manager_username:
+            return False, "You can only configure settings for projects you manage"
+        
+        # Prepare settings data
+        settings_data = {
+            "project_id": project_id,
+            "manager": manager_username,
+            "llm_service": llm_choice,  # "local" or "claude"
+            "updated_at": datetime.now(timezone.utc)
+        }
+        
+        # Handle API key validation for Claude
+        if llm_choice == "claude":
+            if not api_key:
+                return False, "API key is required for Claude"
+            
+            # Validate API key
+            is_valid, message = validate_claude_api_key(api_key)
+            if not is_valid:
+                return False, f"API key validation failed: {message}"
+            
+            settings_data["claude_api_key"] = api_key
+            settings_data["api_key_validated"] = True
+            settings_data["api_key_validated_at"] = datetime.now(timezone.utc)
+            
+        elif llm_choice == "local":
+            # Remove API key if switching to local
+            settings_data["claude_api_key"] = None
+            settings_data["api_key_validated"] = False
+        
+        # Check if settings already exist
+        existing_settings = project_settings_collection.find_one({"project_id": project_id})
+        
+        if existing_settings:
+            # Update existing settings
+            settings_data["created_at"] = existing_settings.get("created_at", datetime.now(timezone.utc))
+            project_settings_collection.update_one(
+                {"project_id": project_id},
+                {"$set": settings_data}
+            )
+        else:
+            # Create new settings
+            settings_data["created_at"] = datetime.now(timezone.utc)
+            project_settings_collection.insert_one(settings_data)
+        
+        return True, "Project LLM settings saved successfully"
+        
+    except Exception as e:
+        print(f"Error saving project LLM settings: {e}")
+        return False, f"Error saving settings: {str(e)}"
 
+def get_project_llm_settings(project_id):
+    """Get LLM settings for a specific project"""
+    try:
+        return project_settings_collection.find_one({"project_id": project_id})
+    except Exception as e:
+        print(f"Error getting project LLM settings: {e}")
+        return None
 
+def get_effective_llm_for_project(project_id):
+    """Determine which LLM service should be used for a project"""
+    try:
+        settings = get_project_llm_settings(project_id)
+        
+        if not settings:
+            # No project settings found, default to local if available
+            return "local" if check_rag_availability() else None
+        
+        llm_service = settings.get("llm_service", "local")
+        
+        if llm_service == "claude":
+            # Check if API key is available and validated
+            if settings.get("claude_api_key") and settings.get("api_key_validated"):
+                return "claude"
+            else:
+                # API key not available or not validated, fallback to local
+                return "local" if check_rag_availability() else None
+        else:
+            # Project configured for local
+            return "local" if check_rag_availability() else None
+            
+    except Exception as e:
+        print(f"Error determining effective LLM service for project: {e}")
+        return "local" if check_rag_availability() else None
+
+def get_project_api_key(project_id):
+    """Get the API key for a project"""
+    try:
+        settings = get_project_llm_settings(project_id)
+        if settings and settings.get("claude_api_key") and settings.get("api_key_validated"):
+            return settings["claude_api_key"]
+        return None
+    except Exception as e:
+        print(f"Error getting project API key: {e}")
+        return None
+@app.route("/project_llm_settings/<project_id>", methods=["GET"])
+@login_required
+def get_project_llm_settings_endpoint(project_id):
+    username = session["user"]
+    
+    try:
+        user = users_collection.find_one({"username": username})
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        
+        # Check if user can access this project
+        project = projects_collection.find_one({"id": project_id})
+        if not project:
+            return jsonify({"error": "Project not found"}), 404
+        
+        user_role = user.get("role", "user")
+        
+        # Allow access if user is:
+        # 1. Project owner (manager/admin who created it)
+        # 2. Assigned user/collaborator (for read-only access)
+        has_access = (
+            project["user"] == username or  # Owner
+            username in project.get("collaborators", []) or  # Collaborator
+            username in project.get("assigned_users", []) or  # Assigned user
+            user_role in ["manager", "admin"]  # Manager/Admin
+        )
+        
+        if not has_access:
+            return jsonify({"error": "Access denied to this project"}), 403
+        
+        # Only managers/admins who own the project can modify settings
+        can_modify = user_role in ["manager", "admin"] and (
+            project["user"] == username or user_role == "admin"
+        )
+        
+        settings = get_project_llm_settings(project_id)
+        
+        # Prepare response (don't expose API key to non-managers)
+        response_data = {
+            "project_id": project_id,
+            "llm_service": settings.get("llm_service", "local") if settings else "local",
+            "has_claude_key": bool(settings and settings.get("claude_api_key")) if can_modify else None,
+            "api_key_validated": settings.get("api_key_validated", False) if settings else False,
+            "manager": settings.get("manager") if settings else None,
+            "local_available": check_rag_availability(),
+            "effective_service": get_effective_llm_for_project(project_id),
+            "can_modify_settings": can_modify,
+            "user_role": user_role
+        }
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        print(f"Error getting project LLM settings: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/project_llm_settings/<project_id>", methods=["POST"])
+@login_required
+def save_project_llm_settings_endpoint(project_id):
+    """Save project's LLM settings - only managers can do this"""
+    username = session["user"]
+    data = request.json
+    
+    llm_choice = data.get("llm_service")
+    api_key = data.get("claude_api_key", "").strip()
+    
+    # Validate input
+    if llm_choice not in ["local", "claude"]:
+        return jsonify({"error": "llm_service must be 'local' or 'claude'"}), 400
+    
+    try:
+        success, message = save_project_llm_settings(project_id, username, llm_choice, api_key)
+        
+        if success:
+            # Get updated settings to return
+            updated_settings = get_project_llm_settings(project_id)
+            
+            response_data = {
+                "message": message,
+                "settings": {
+                    "project_id": project_id,
+                    "llm_service": updated_settings.get("llm_service"),
+                    "has_claude_key": bool(updated_settings.get("claude_api_key")),
+                    "api_key_validated": updated_settings.get("api_key_validated", False),
+                    "effective_service": get_effective_llm_for_project(project_id)
+                }
+            }
+            
+            return jsonify(response_data)
+        else:
+            return jsonify({"error": message}), 400
+            
+    except Exception as e:
+        print(f"Error saving project LLM settings: {e}")
+        return jsonify({"error": str(e)}), 500
+@app.route("/project_llm_settings/<project_id>", methods=["DELETE"])
+@login_required
+def delete_project_llm_settings_endpoint(project_id):
+    """Delete project LLM settings (reset to defaults)"""
+    username = session["user"]
+    
+    try:
+        user = users_collection.find_one({"username": username})
+        if not user or user.get("role") not in ["manager", "admin"]:
+            return jsonify({"error": "Access denied"}), 403
+        
+        project = projects_collection.find_one({"id": project_id})
+        if not project:
+            return jsonify({"error": "Project not found"}), 404
+        
+        if user.get("role") != "admin" and project["user"] != username:
+            return jsonify({"error": "You can only delete settings for projects you manage"}), 403
+        
+        # Delete the settings
+        project_settings_collection.delete_one({"project_id": project_id})
+        
+        return jsonify({"message": "Project LLM settings reset to defaults"})
+        
+    except Exception as e:
+        print(f"Error deleting project LLM settings: {e}")
+        return jsonify({"error": str(e)}), 500
+# Add this to your app.py
+
+@app.route("/project_info/<project_id>", methods=["GET"])
+@login_required
+def get_project_info_for_users(project_id):
+    """Get project information for regular users (read-only)"""
+    username = session["user"]
+    
+    try:
+        # Verify user has access to this project
+        project = projects_collection.find_one({"id": project_id})
+        if not project:
+            return jsonify({"error": "Project not found"}), 404
+        
+        # Check if user is owner, collaborator, or assigned user
+        user = users_collection.find_one({"username": username})
+        user_role = user.get("role", "user")
+        
+        has_access = (
+            project["user"] == username or  # Owner
+            username in project.get("collaborators", []) or  # Collaborator
+            username in project.get("assigned_users", []) or  # Assigned user
+            user_role in ["manager", "admin"]  # Manager/Admin
+        )
+        
+        if not has_access:
+            return jsonify({"error": "Access denied to this project"}), 403
+        
+        # Get project settings (what model is configured)
+        project_settings = get_project_llm_settings(project_id)
+        effective_service = get_effective_llm_for_project(project_id)
+        
+        # Prepare response with safe information
+        project_info = {
+            "project_id": project_id,
+            "name": project.get("name"),
+            "effective_service": effective_service,
+            "service_display_name": {
+                "local": "Local RAG System",
+                "claude": "Claude AI"
+            }.get(effective_service, effective_service),
+            "is_configured": bool(project_settings),
+            "manager": project_settings.get("manager") if project_settings else project.get("user"),
+            "user_role": user_role,
+            "can_modify_settings": user_role in ["manager", "admin"] and (
+                project["user"] == username or user_role == "admin"
+            )
+        }
+        
+        return jsonify(project_info)
+        
+    except Exception as e:
+        print(f"Error getting project info: {e}")
+        return jsonify({"error": str(e)}), 500
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Credentials', 'true')

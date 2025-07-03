@@ -127,28 +127,11 @@ def get_assignable_users():
                 {"username": 1, "email": 1, "created_at": 1, "created_by": 1, "_id": 1, "role": 1}
             ))
         else:
-            # Managers can see users they created and users assigned to their projects
-            managed_projects = list(projects_collection.find({"user": current_user}))
-            project_ids = [p["id"] for p in managed_projects]
-            
-            # Get users assigned to manager's projects
-            assigned_usernames = collaborators_collection.distinct("username", {"project_id": {"$in": project_ids}})
-            
-            # Get users created by this manager
-            created_users = list(users_collection.find(
-                {"created_by": current_user, "role": {"$nin": ["manager", "admin"]}},
+            # CHANGED: Managers can now see ALL regular users (not just the ones they created)
+            users = list(users_collection.find(
+                {"role": {"$nin": ["manager", "admin"]}},
                 {"username": 1, "email": 1, "created_at": 1, "created_by": 1, "_id": 1, "role": 1}
             ))
-            
-            # Get assigned users
-            assigned_users = list(users_collection.find(
-                {"username": {"$in": assigned_usernames}, "role": {"$nin": ["manager", "admin"]}},
-                {"username": 1, "email": 1, "created_at": 1, "created_by": 1, "_id": 1, "role": 1}
-            ))
-            
-            # Combine and deduplicate
-            all_users = {user["username"]: user for user in created_users + assigned_users}
-            users = list(all_users.values())
         
         # Convert ObjectId to string and add assignment info
         for user in users:
