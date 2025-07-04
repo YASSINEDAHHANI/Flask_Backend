@@ -4807,3 +4807,410 @@
 2025-07-03 13:35:03,071 - INFO - 127.0.0.1 - - [03/Jul/2025 13:35:03] "GET /projects HTTP/1.1" 200 -
 2025-07-03 13:35:03,073 - INFO - 127.0.0.1 - - [03/Jul/2025 13:35:03] "GET /project_llm_settings/bc7a11d3-c4ab-4f1e-bf4f-059c91813332 HTTP/1.1" 200 -
 2025-07-03 13:35:03,118 - INFO - 127.0.0.1 - - [03/Jul/2025 13:35:03] "GET /project_llm_settings/bc7a11d3-c4ab-4f1e-bf4f-059c91813332 HTTP/1.1" 200 -
+2025-07-03 18:19:42,779 - INFO - Use pytorch device_name: cpu
+2025-07-03 18:19:42,780 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-03 18:19:46,980 - INFO - Core components setup complete
+2025-07-03 18:20:49,053 - INFO - Remote Ollama model 'qwen3:8b' connected successfully at http://35.173.131.200:11434
+2025-07-03 18:20:49,097 - INFO - Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
+2025-07-03 18:20:49,348 - INFO - Loaded existing vector store
+2025-07-03 18:20:49,348 - INFO - QA chain setup complete
+2025-07-03 18:20:49,348 - INFO - Local RAG System initialized successfully
+2025-07-03 18:20:49,403 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.12:5000
+2025-07-03 18:20:49,404 - INFO - [33mPress CTRL+C to quit[0m
+2025-07-03 18:20:49,431 - INFO -  * Restarting with watchdog (windowsapi)
+2025-07-03 18:21:03,913 - INFO - Use pytorch device_name: cpu
+2025-07-03 18:21:03,913 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-03 18:21:07,555 - INFO - Core components setup complete
+2025-07-03 18:21:58,439 - INFO - Remote Ollama model 'qwen3:8b' connected successfully at http://35.173.131.200:11434
+2025-07-03 18:21:58,469 - INFO - Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
+2025-07-03 18:21:58,588 - INFO - Loaded existing vector store
+2025-07-03 18:21:58,588 - INFO - QA chain setup complete
+2025-07-03 18:21:58,588 - INFO - Local RAG System initialized successfully
+2025-07-03 18:21:58,616 - WARNING -  * Debugger is active!
+2025-07-03 18:21:58,622 - INFO -  * Debugger PIN: 646-366-996
+2025-07-03 18:23:33,829 - INFO - 127.0.0.1 - - [03/Jul/2025 18:23:33] "OPTIONS /login HTTP/1.1" 200 -
+2025-07-03 18:23:34,189 - INFO - 127.0.0.1 - - [03/Jul/2025 18:23:34] "POST /login HTTP/1.1" 200 -
+2025-07-03 18:23:34,404 - INFO - 127.0.0.1 - - [03/Jul/2025 18:23:34] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:23:34,556 - INFO - 127.0.0.1 - - [03/Jul/2025 18:23:34] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:23:34,866 - INFO - 127.0.0.1 - - [03/Jul/2025 18:23:34] "GET /admin/dashboard HTTP/1.1" 200 -
+2025-07-03 18:23:34,916 - INFO - 127.0.0.1 - - [03/Jul/2025 18:23:34] "GET /admin/dashboard HTTP/1.1" 200 -
+2025-07-03 18:23:38,615 - INFO - 127.0.0.1 - - [03/Jul/2025 18:23:38] "GET /admin/users HTTP/1.1" 200 -
+2025-07-03 18:23:43,283 - INFO -  * Detected change in 'C:\\Users\\dahan\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\werkzeug\\debug\\__init__.py', reloading
+2025-07-03 18:23:43,300 - INFO -  * Detected change in 'C:\\Users\\dahan\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\werkzeug\\serving.py', reloading
+2025-07-03 18:23:43,342 - INFO -  * Detected change in 'C:\\Users\\dahan\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\http\\server.py', reloading
+2025-07-03 18:23:43,355 - INFO -  * Detected change in 'C:\\Users\\dahan\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\socketserver.py', reloading
+2025-07-03 18:23:43,372 - INFO -  * Detected change in 'C:\\Users\\dahan\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\threading.py', reloading
+2025-07-03 18:23:43,406 - INFO - Use pytorch device_name: cpu
+2025-07-03 18:23:43,406 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-03 18:23:46,667 - INFO -  * Restarting with watchdog (windowsapi)
+2025-07-03 18:23:59,989 - INFO - Use pytorch device_name: cpu
+2025-07-03 18:23:59,989 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-03 18:24:03,321 - INFO - Core components setup complete
+2025-07-03 18:25:09,529 - INFO - Remote Ollama model 'qwen3:8b' connected successfully at http://35.173.131.200:11434
+2025-07-03 18:25:09,554 - INFO - Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
+2025-07-03 18:25:09,677 - INFO - Loaded existing vector store
+2025-07-03 18:25:09,678 - INFO - QA chain setup complete
+2025-07-03 18:25:09,678 - INFO - Local RAG System initialized successfully
+2025-07-03 18:25:09,703 - WARNING -  * Debugger is active!
+2025-07-03 18:25:09,707 - INFO -  * Debugger PIN: 646-366-996
+2025-07-03 18:25:09,757 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:09] "POST /logout HTTP/1.1" 200 -
+2025-07-03 18:25:09,760 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:09] "OPTIONS /login HTTP/1.1" 200 -
+2025-07-03 18:25:09,799 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:09] "GET /admin/dashboard HTTP/1.1" 200 -
+2025-07-03 18:25:09,821 - INFO - Use pytorch device_name: cpu
+2025-07-03 18:25:09,821 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-03 18:25:10,084 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:10] "POST /login HTTP/1.1" 200 -
+2025-07-03 18:25:10,344 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:10] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:25:10,452 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:10] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:25:10,656 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:10] "GET /projects HTTP/1.1" 200 -
+2025-07-03 18:25:10,666 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:10] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:25:10,765 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:10] "GET /projects HTTP/1.1" 200 -
+2025-07-03 18:25:10,971 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:10] "GET /project_llm_settings/66af7483-9644-4067-850d-b4ce4cbc8e32 HTTP/1.1" 200 -
+2025-07-03 18:25:10,980 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:10] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:25:10,988 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:10] "GET /project_llm_settings/57432006-9776-4f4f-83bb-d6fdd51bf86f HTTP/1.1" 200 -
+2025-07-03 18:25:10,990 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:10] "GET /project_llm_settings/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:25:10,997 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:10] "GET /project_llm_settings/bc7a11d3-c4ab-4f1e-bf4f-059c91813332 HTTP/1.1" 200 -
+2025-07-03 18:25:11,293 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:11] "GET /project_llm_settings/66af7483-9644-4067-850d-b4ce4cbc8e32 HTTP/1.1" 200 -
+2025-07-03 18:25:11,301 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:11] "GET /project_llm_settings/57432006-9776-4f4f-83bb-d6fdd51bf86f HTTP/1.1" 200 -
+2025-07-03 18:25:11,303 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:11] "GET /project_llm_settings/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:25:11,313 - INFO - 127.0.0.1 - - [03/Jul/2025 18:25:11] "GET /project_llm_settings/bc7a11d3-c4ab-4f1e-bf4f-059c91813332 HTTP/1.1" 200 -
+2025-07-03 18:25:11,824 - INFO - Core components setup complete
+2025-07-03 18:25:40,202 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-03 18:25:40,202 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-03 18:25:40,203 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-03 18:25:42,414 - INFO -  * Restarting with watchdog (windowsapi)
+2025-07-03 18:25:55,273 - INFO - Use pytorch device_name: cpu
+2025-07-03 18:25:55,273 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-03 18:25:58,989 - INFO - Core components setup complete
+2025-07-03 18:26:59,295 - INFO - Remote Ollama model 'qwen3:8b' connected successfully at http://35.173.131.200:11434
+2025-07-03 18:26:59,325 - INFO - Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
+2025-07-03 18:26:59,442 - INFO - Loaded existing vector store
+2025-07-03 18:26:59,442 - INFO - QA chain setup complete
+2025-07-03 18:26:59,442 - INFO - Local RAG System initialized successfully
+2025-07-03 18:26:59,471 - WARNING -  * Debugger is active!
+2025-07-03 18:26:59,475 - INFO -  * Debugger PIN: 646-366-996
+2025-07-03 18:27:02,109 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-03 18:27:02,110 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-03 18:27:02,111 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-03 18:27:04,635 - INFO -  * Restarting with watchdog (windowsapi)
+2025-07-03 18:27:17,592 - INFO - Use pytorch device_name: cpu
+2025-07-03 18:27:17,592 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-03 18:27:20,785 - INFO - Core components setup complete
+2025-07-03 18:28:15,510 - INFO - Remote Ollama model 'qwen3:8b' connected successfully at http://35.173.131.200:11434
+2025-07-03 18:28:15,536 - INFO - Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
+2025-07-03 18:28:15,657 - INFO - Loaded existing vector store
+2025-07-03 18:28:15,658 - INFO - QA chain setup complete
+2025-07-03 18:28:15,658 - INFO - Local RAG System initialized successfully
+2025-07-03 18:28:15,687 - WARNING -  * Debugger is active!
+2025-07-03 18:28:15,691 - INFO -  * Debugger PIN: 646-366-996
+2025-07-03 18:32:02,355 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:02] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:32:02,617 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:02] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:32:02,671 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:02] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:32:02,718 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:02] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:32:03,236 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:03] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:32:03,553 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:03] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:32:03,616 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:03] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:32:03,926 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:03] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:32:03,944 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:03] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:32:04,251 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:04] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:32:05,587 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:05] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:32:05,600 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:05] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:32:05,834 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:05] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:32:05,893 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:05] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:32:05,912 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:05] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:32:06,206 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:06] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:32:19,819 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:19] "OPTIONS /generate_test_cases HTTP/1.1" 200 -
+2025-07-03 18:32:29,502 - INFO - HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-07-03 18:32:29,534 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:29] "POST /generate_test_cases HTTP/1.1" 200 -
+2025-07-03 18:32:29,853 - INFO - 127.0.0.1 - - [03/Jul/2025 18:32:29] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:33:09,980 - INFO - 127.0.0.1 - - [03/Jul/2025 18:33:09] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:33:10,003 - INFO - 127.0.0.1 - - [03/Jul/2025 18:33:10] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:33:10,011 - INFO - 127.0.0.1 - - [03/Jul/2025 18:33:10] "[33mGET /get_api_key?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1[0m" 404 -
+2025-07-03 18:33:10,219 - INFO - 127.0.0.1 - - [03/Jul/2025 18:33:10] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:39:51,163 - INFO -  * Detected change in 'C:\\Users\\dahan\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_pyrepl\\_threading_handler.py', reloading
+2025-07-03 18:39:53,555 - INFO -  * Restarting with watchdog (windowsapi)
+2025-07-03 18:40:09,524 - INFO - Use pytorch device_name: cpu
+2025-07-03 18:40:09,524 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-03 18:40:13,099 - INFO - Core components setup complete
+2025-07-03 18:41:24,612 - INFO - Remote Ollama model 'qwen3:8b' connected successfully at http://35.173.131.200:11434
+2025-07-03 18:41:24,649 - INFO - Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
+2025-07-03 18:41:24,772 - INFO - Loaded existing vector store
+2025-07-03 18:41:24,772 - INFO - QA chain setup complete
+2025-07-03 18:41:24,772 - INFO - Local RAG System initialized successfully
+2025-07-03 18:41:24,803 - WARNING -  * Debugger is active!
+2025-07-03 18:41:24,807 - INFO -  * Debugger PIN: 646-366-996
+2025-07-03 18:42:55,375 - INFO - 127.0.0.1 - - [03/Jul/2025 18:42:55] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:42:55,635 - INFO - 127.0.0.1 - - [03/Jul/2025 18:42:55] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:42:55,700 - INFO - 127.0.0.1 - - [03/Jul/2025 18:42:55] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:42:55,709 - INFO - 127.0.0.1 - - [03/Jul/2025 18:42:55] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:42:56,944 - INFO - 127.0.0.1 - - [03/Jul/2025 18:42:56] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:42:56,947 - INFO - 127.0.0.1 - - [03/Jul/2025 18:42:56] "[33mGET /get_api_key?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1[0m" 404 -
+2025-07-03 18:42:56,950 - INFO - 127.0.0.1 - - [03/Jul/2025 18:42:56] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:42:57,207 - INFO - 127.0.0.1 - - [03/Jul/2025 18:42:57] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:42:57,253 - INFO - 127.0.0.1 - - [03/Jul/2025 18:42:57] "[33mGET /get_api_key?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1[0m" 404 -
+2025-07-03 18:42:57,259 - INFO - 127.0.0.1 - - [03/Jul/2025 18:42:57] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:42:57,263 - INFO - 127.0.0.1 - - [03/Jul/2025 18:42:57] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:42:57,576 - INFO - 127.0.0.1 - - [03/Jul/2025 18:42:57] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:42:58,494 - INFO - 127.0.0.1 - - [03/Jul/2025 18:42:58] "OPTIONS /generate_test_cases HTTP/1.1" 200 -
+2025-07-03 18:43:07,892 - INFO - HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-07-03 18:43:07,916 - INFO - 127.0.0.1 - - [03/Jul/2025 18:43:07] "POST /generate_test_cases HTTP/1.1" 200 -
+2025-07-03 18:43:07,936 - INFO - 127.0.0.1 - - [03/Jul/2025 18:43:07] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:43:27,512 - INFO - 127.0.0.1 - - [03/Jul/2025 18:43:27] "OPTIONS /chat_with_assistant HTTP/1.1" 200 -
+2025-07-03 18:43:27,836 - INFO - 127.0.0.1 - - [03/Jul/2025 18:43:27] "POST /chat_with_assistant HTTP/1.1" 200 -
+2025-07-03 18:44:38,366 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:38] "OPTIONS /login HTTP/1.1" 200 -
+2025-07-03 18:44:38,678 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:38] "POST /login HTTP/1.1" 200 -
+2025-07-03 18:44:38,939 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:38] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:44:39,065 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:39] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:44:39,254 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:39] "GET /projects HTTP/1.1" 200 -
+2025-07-03 18:44:39,298 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:39] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:44:39,378 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:39] "GET /projects HTTP/1.1" 200 -
+2025-07-03 18:44:39,569 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:39] "GET /project_llm_settings/66af7483-9644-4067-850d-b4ce4cbc8e32 HTTP/1.1" 200 -
+2025-07-03 18:44:39,570 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:39] "GET /project_llm_settings/57432006-9776-4f4f-83bb-d6fdd51bf86f HTTP/1.1" 200 -
+2025-07-03 18:44:39,582 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:39] "GET /project_llm_settings/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:44:39,585 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:39] "GET /project_llm_settings/bc7a11d3-c4ab-4f1e-bf4f-059c91813332 HTTP/1.1" 200 -
+2025-07-03 18:44:39,612 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:39] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:44:39,879 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:39] "GET /project_llm_settings/66af7483-9644-4067-850d-b4ce4cbc8e32 HTTP/1.1" 200 -
+2025-07-03 18:44:39,879 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:39] "GET /project_llm_settings/57432006-9776-4f4f-83bb-d6fdd51bf86f HTTP/1.1" 200 -
+2025-07-03 18:44:39,895 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:39] "GET /project_llm_settings/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:44:39,895 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:39] "GET /project_llm_settings/bc7a11d3-c4ab-4f1e-bf4f-059c91813332 HTTP/1.1" 200 -
+2025-07-03 18:44:41,287 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:41] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:44:41,537 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:41] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:44:41,601 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:41] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:44:41,633 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:41] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:44:42,086 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:42] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:44:42,397 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:42] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:44:42,446 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:42] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:44:42,761 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:42] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:44:42,771 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:42] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:44:43,099 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:43] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:44:43,357 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:43] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:44:43,658 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:43] "[33mGET /check_global_api_service HTTP/1.1[0m" 404 -
+2025-07-03 18:44:43,666 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:43] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:44:43,672 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:43] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:44:43,967 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:43] "[33mGET /check_global_api_service HTTP/1.1[0m" 404 -
+2025-07-03 18:44:43,976 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:43] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:44:44,291 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:44] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:44:44,605 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:44] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:44:53,226 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:53] "OPTIONS /chat_with_assistant HTTP/1.1" 200 -
+2025-07-03 18:44:53,544 - INFO - 127.0.0.1 - - [03/Jul/2025 18:44:53] "POST /chat_with_assistant HTTP/1.1" 200 -
+2025-07-03 18:50:03,074 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-03 18:50:03,075 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-03 18:50:03,076 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-03 18:50:06,297 - INFO -  * Restarting with watchdog (windowsapi)
+2025-07-03 18:50:23,827 - INFO - Use pytorch device_name: cpu
+2025-07-03 18:50:23,828 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-03 18:50:27,476 - INFO - Core components setup complete
+2025-07-03 18:51:19,110 - INFO - Use pytorch device_name: cpu
+2025-07-03 18:51:19,110 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-03 18:51:22,403 - INFO - Core components setup complete
+2025-07-03 18:52:32,297 - INFO - Remote Ollama model 'qwen3:8b' connected successfully at http://35.173.131.200:11434
+2025-07-03 18:52:32,345 - INFO - Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
+2025-07-03 18:52:32,507 - INFO - Loaded existing vector store
+2025-07-03 18:52:32,508 - INFO - QA chain setup complete
+2025-07-03 18:52:32,508 - INFO - Local RAG System initialized successfully
+2025-07-03 18:52:32,560 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.12:5000
+2025-07-03 18:52:32,560 - INFO - [33mPress CTRL+C to quit[0m
+2025-07-03 18:52:32,587 - INFO -  * Restarting with watchdog (windowsapi)
+2025-07-03 18:52:48,401 - INFO - Use pytorch device_name: cpu
+2025-07-03 18:52:48,401 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-03 18:52:52,008 - INFO - Core components setup complete
+2025-07-03 18:53:49,926 - INFO - Remote Ollama model 'qwen3:8b' connected successfully at http://35.173.131.200:11434
+2025-07-03 18:53:49,958 - INFO - Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
+2025-07-03 18:53:50,076 - INFO - Loaded existing vector store
+2025-07-03 18:53:50,077 - INFO - QA chain setup complete
+2025-07-03 18:53:50,077 - INFO - Local RAG System initialized successfully
+2025-07-03 18:53:50,104 - WARNING -  * Debugger is active!
+2025-07-03 18:53:50,110 - INFO -  * Debugger PIN: 646-366-996
+2025-07-03 18:53:50,163 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:50] "[33mGET /main.344fda5e51813b45f0a5.hot-update.json HTTP/1.1[0m" 404 -
+2025-07-03 18:53:50,166 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:50] "OPTIONS /login HTTP/1.1" 200 -
+2025-07-03 18:53:54,909 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:54] "POST /login HTTP/1.1" 200 -
+2025-07-03 18:53:55,171 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:55] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:53:55,284 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:55] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:53:55,489 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:55] "GET /projects HTTP/1.1" 200 -
+2025-07-03 18:53:55,548 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:55] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:53:55,595 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:55] "GET /projects HTTP/1.1" 200 -
+2025-07-03 18:53:55,802 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:55] "GET /project_llm_settings/66af7483-9644-4067-850d-b4ce4cbc8e32 HTTP/1.1" 200 -
+2025-07-03 18:53:55,809 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:55] "GET /project_llm_settings/57432006-9776-4f4f-83bb-d6fdd51bf86f HTTP/1.1" 200 -
+2025-07-03 18:53:55,826 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:55] "GET /project_llm_settings/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:53:55,831 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:55] "GET /project_llm_settings/bc7a11d3-c4ab-4f1e-bf4f-059c91813332 HTTP/1.1" 200 -
+2025-07-03 18:53:55,859 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:55] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:53:56,125 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:56] "GET /project_llm_settings/66af7483-9644-4067-850d-b4ce4cbc8e32 HTTP/1.1" 200 -
+2025-07-03 18:53:56,126 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:56] "GET /project_llm_settings/57432006-9776-4f4f-83bb-d6fdd51bf86f HTTP/1.1" 200 -
+2025-07-03 18:53:56,139 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:56] "GET /project_llm_settings/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:53:56,151 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:56] "GET /project_llm_settings/bc7a11d3-c4ab-4f1e-bf4f-059c91813332 HTTP/1.1" 200 -
+2025-07-03 18:53:58,417 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:58] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:53:58,668 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:58] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:53:58,735 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:58] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:53:58,764 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:58] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:53:59,146 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:59] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:53:59,459 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:59] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:53:59,521 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:59] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:53:59,832 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:59] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:53:59,838 - INFO - 127.0.0.1 - - [03/Jul/2025 18:53:59] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:54:00,160 - INFO - 127.0.0.1 - - [03/Jul/2025 18:54:00] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:54:01,060 - INFO - 127.0.0.1 - - [03/Jul/2025 18:54:01] "GET /check_global_api_service HTTP/1.1" 200 -
+2025-07-03 18:54:01,063 - INFO - 127.0.0.1 - - [03/Jul/2025 18:54:01] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:54:01,068 - INFO - 127.0.0.1 - - [03/Jul/2025 18:54:01] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:54:01,321 - INFO - 127.0.0.1 - - [03/Jul/2025 18:54:01] "GET /check_global_api_service HTTP/1.1" 200 -
+2025-07-03 18:54:01,370 - INFO - 127.0.0.1 - - [03/Jul/2025 18:54:01] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 18:54:01,375 - INFO - 127.0.0.1 - - [03/Jul/2025 18:54:01] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:54:01,381 - INFO - 127.0.0.1 - - [03/Jul/2025 18:54:01] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:54:01,699 - INFO - 127.0.0.1 - - [03/Jul/2025 18:54:01] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 18:54:13,465 - INFO - 127.0.0.1 - - [03/Jul/2025 18:54:13] "OPTIONS /chat_with_assistant HTTP/1.1" 200 -
+2025-07-03 18:54:14,284 - INFO - 127.0.0.1 - - [03/Jul/2025 18:54:14] "POST /chat_with_assistant HTTP/1.1" 200 -
+2025-07-03 18:55:32,313 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-03 18:55:32,314 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-03 18:55:32,315 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-03 18:55:36,837 - INFO -  * Restarting with watchdog (windowsapi)
+2025-07-03 18:55:51,017 - INFO - Use pytorch device_name: cpu
+2025-07-03 18:55:51,017 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-03 18:55:54,392 - INFO - Core components setup complete
+2025-07-03 18:57:12,492 - INFO - Use pytorch device_name: cpu
+2025-07-03 18:57:12,492 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-03 18:57:15,659 - INFO - Core components setup complete
+2025-07-03 18:58:24,272 - INFO - Remote Ollama model 'qwen3:8b' connected successfully at http://35.173.131.200:11434
+2025-07-03 18:58:24,298 - INFO - Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
+2025-07-03 18:58:24,437 - INFO - Loaded existing vector store
+2025-07-03 18:58:24,437 - INFO - QA chain setup complete
+2025-07-03 18:58:24,437 - INFO - Local RAG System initialized successfully
+2025-07-03 18:58:24,481 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.12:5000
+2025-07-03 18:58:24,481 - INFO - [33mPress CTRL+C to quit[0m
+2025-07-03 18:58:24,504 - INFO -  * Restarting with watchdog (windowsapi)
+2025-07-03 18:58:36,989 - INFO - Use pytorch device_name: cpu
+2025-07-03 18:58:36,989 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-03 18:58:40,361 - INFO - Core components setup complete
+2025-07-03 18:59:47,598 - INFO - Remote Ollama model 'qwen3:8b' connected successfully at http://35.173.131.200:11434
+2025-07-03 18:59:47,631 - INFO - Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
+2025-07-03 18:59:47,786 - INFO - Loaded existing vector store
+2025-07-03 18:59:47,787 - INFO - QA chain setup complete
+2025-07-03 18:59:47,787 - INFO - Local RAG System initialized successfully
+2025-07-03 18:59:47,814 - WARNING -  * Debugger is active!
+2025-07-03 18:59:47,817 - INFO -  * Debugger PIN: 646-366-996
+2025-07-03 18:59:47,862 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:47] "OPTIONS /login HTTP/1.1" 200 -
+2025-07-03 18:59:47,865 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:47] "OPTIONS /login HTTP/1.1" 200 -
+2025-07-03 18:59:47,868 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:47] "OPTIONS /login HTTP/1.1" 200 -
+2025-07-03 18:59:47,871 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:47] "OPTIONS /login HTTP/1.1" 200 -
+2025-07-03 18:59:48,188 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:48] "POST /login HTTP/1.1" 200 -
+2025-07-03 18:59:48,444 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:48] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:59:48,538 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:48] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:59:48,761 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:48] "GET /projects HTTP/1.1" 200 -
+2025-07-03 18:59:48,791 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:48] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:59:48,852 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:48] "GET /projects HTTP/1.1" 200 -
+2025-07-03 18:59:49,078 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:49] "GET /project_llm_settings/66af7483-9644-4067-850d-b4ce4cbc8e32 HTTP/1.1" 200 -
+2025-07-03 18:59:49,096 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:49] "GET /project_llm_settings/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:59:49,102 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:49] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 18:59:49,110 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:49] "GET /project_llm_settings/57432006-9776-4f4f-83bb-d6fdd51bf86f HTTP/1.1" 200 -
+2025-07-03 18:59:49,113 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:49] "GET /project_llm_settings/bc7a11d3-c4ab-4f1e-bf4f-059c91813332 HTTP/1.1" 200 -
+2025-07-03 18:59:49,399 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:49] "GET /project_llm_settings/66af7483-9644-4067-850d-b4ce4cbc8e32 HTTP/1.1" 200 -
+2025-07-03 18:59:49,406 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:49] "GET /project_llm_settings/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 18:59:49,433 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:49] "GET /project_llm_settings/57432006-9776-4f4f-83bb-d6fdd51bf86f HTTP/1.1" 200 -
+2025-07-03 18:59:49,433 - INFO - 127.0.0.1 - - [03/Jul/2025 18:59:49] "GET /project_llm_settings/bc7a11d3-c4ab-4f1e-bf4f-059c91813332 HTTP/1.1" 200 -
+2025-07-03 19:00:01,289 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:01] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 19:00:01,554 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:01] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 19:00:01,601 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:01] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 19:00:01,622 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:01] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 19:00:02,298 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:02] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 19:00:02,610 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:02] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 19:00:02,675 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:02] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 19:00:02,997 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:02] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 19:00:03,073 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:03] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 19:00:03,383 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:03] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 19:00:03,944 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:03] "GET /check_global_api_service HTTP/1.1" 200 -
+2025-07-03 19:00:03,948 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:03] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 19:00:03,949 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:03] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 19:00:04,191 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:04] "GET /check_global_api_service HTTP/1.1" 200 -
+2025-07-03 19:00:04,256 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:04] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 19:00:04,257 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:04] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 19:00:04,264 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:04] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 19:00:04,598 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:04] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 19:00:13,032 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:13] "OPTIONS /chat_with_assistant HTTP/1.1" 200 -
+2025-07-03 19:00:13,791 - INFO - 127.0.0.1 - - [03/Jul/2025 19:00:13] "POST /chat_with_assistant HTTP/1.1" 200 -
+2025-07-03 19:01:06,114 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-03 19:01:06,115 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-03 19:01:06,115 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-03 19:01:10,641 - INFO -  * Restarting with watchdog (windowsapi)
+2025-07-03 19:01:23,063 - INFO - Use pytorch device_name: cpu
+2025-07-03 19:01:23,064 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-03 19:01:26,186 - INFO - Core components setup complete
+2025-07-03 19:02:18,020 - INFO - Remote Ollama model 'qwen3:8b' connected successfully at http://35.173.131.200:11434
+2025-07-03 19:02:18,045 - INFO - Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
+2025-07-03 19:02:18,167 - INFO - Loaded existing vector store
+2025-07-03 19:02:18,168 - INFO - QA chain setup complete
+2025-07-03 19:02:18,168 - INFO - Local RAG System initialized successfully
+2025-07-03 19:02:18,195 - WARNING -  * Debugger is active!
+2025-07-03 19:02:18,199 - INFO -  * Debugger PIN: 646-366-996
+2025-07-03 19:02:35,549 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:35] "OPTIONS /login HTTP/1.1" 200 -
+2025-07-03 19:02:35,863 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:35] "POST /login HTTP/1.1" 200 -
+2025-07-03 19:02:36,127 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:36] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 19:02:36,235 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:36] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 19:02:36,437 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:36] "GET /projects HTTP/1.1" 200 -
+2025-07-03 19:02:36,453 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:36] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 19:02:36,547 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:36] "GET /projects HTTP/1.1" 200 -
+2025-07-03 19:02:36,748 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:36] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 19:02:36,769 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:36] "GET /project_llm_settings/66af7483-9644-4067-850d-b4ce4cbc8e32 HTTP/1.1" 200 -
+2025-07-03 19:02:36,831 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:36] "GET /project_llm_settings/57432006-9776-4f4f-83bb-d6fdd51bf86f HTTP/1.1" 200 -
+2025-07-03 19:02:36,833 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:36] "GET /project_llm_settings/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 19:02:36,857 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:36] "GET /project_llm_settings/bc7a11d3-c4ab-4f1e-bf4f-059c91813332 HTTP/1.1" 200 -
+2025-07-03 19:02:37,092 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:37] "GET /project_llm_settings/66af7483-9644-4067-850d-b4ce4cbc8e32 HTTP/1.1" 200 -
+2025-07-03 19:02:37,154 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:37] "GET /project_llm_settings/57432006-9776-4f4f-83bb-d6fdd51bf86f HTTP/1.1" 200 -
+2025-07-03 19:02:37,155 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:37] "GET /project_llm_settings/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 19:02:37,170 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:37] "GET /project_llm_settings/bc7a11d3-c4ab-4f1e-bf4f-059c91813332 HTTP/1.1" 200 -
+2025-07-03 19:02:38,995 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:38] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 19:02:39,241 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:39] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 19:02:39,310 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:39] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 19:02:39,320 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:39] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 19:02:39,996 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:39] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 19:02:40,315 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:40] "GET /check_session HTTP/1.1" 200 -
+2025-07-03 19:02:40,362 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:40] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 19:02:40,675 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:40] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243 HTTP/1.1" 200 -
+2025-07-03 19:02:40,677 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:40] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 19:02:40,997 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:40] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 19:02:44,527 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:44] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 19:02:44,841 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:44] "GET /check_global_api_service HTTP/1.1" 200 -
+2025-07-03 19:02:44,844 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:44] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 19:02:44,848 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:44] "GET /projects/e8ebe84d-948a-43e3-9f00-8ced26ad2243/requirements HTTP/1.1" 200 -
+2025-07-03 19:02:45,150 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:45] "GET /check_global_api_service HTTP/1.1" 200 -
+2025-07-03 19:02:45,154 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:45] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 19:02:45,463 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:45] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 19:02:45,785 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:45] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 19:02:48,818 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:48] "OPTIONS /generate_test_cases HTTP/1.1" 200 -
+2025-07-03 19:02:57,160 - INFO - HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2025-07-03 19:02:57,176 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:57] "POST /generate_test_cases HTTP/1.1" 200 -
+2025-07-03 19:02:57,191 - INFO - 127.0.0.1 - - [03/Jul/2025 19:02:57] "GET /history?project_id=e8ebe84d-948a-43e3-9f00-8ced26ad2243&requirement_id=95cc3e9d-6f05-45d2-a866-a6eebe4634d7 HTTP/1.1" 200 -
+2025-07-03 19:03:04,667 - INFO - 127.0.0.1 - - [03/Jul/2025 19:03:04] "OPTIONS /chat_with_assistant HTTP/1.1" 200 -
+2025-07-03 19:03:05,703 - INFO - 127.0.0.1 - - [03/Jul/2025 19:03:05] "POST /chat_with_assistant HTTP/1.1" 200 -
+2025-07-04 16:45:21,436 - INFO - Use pytorch device_name: cpu
+2025-07-04 16:45:21,436 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-04 16:45:25,154 - INFO - Core components setup complete
+2025-07-04 16:46:22,353 - INFO - Remote Ollama model 'qwen3:8b' connected successfully at http://35.173.131.200:11434
+2025-07-04 16:46:22,390 - INFO - Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
+2025-07-04 16:46:22,617 - INFO - Loaded existing vector store
+2025-07-04 16:46:22,617 - INFO - QA chain setup complete
+2025-07-04 16:46:22,618 - INFO - Local RAG System initialized successfully
+2025-07-04 16:46:22,681 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.11.162:5000
+2025-07-04 16:46:22,681 - INFO - [33mPress CTRL+C to quit[0m
+2025-07-04 16:46:22,705 - INFO -  * Restarting with watchdog (windowsapi)
+2025-07-04 16:46:36,222 - INFO - Use pytorch device_name: cpu
+2025-07-04 16:46:36,223 - INFO - Load pretrained SentenceTransformer: sentence-transformers/all-MiniLM-L6-v2
+2025-07-04 16:46:39,773 - INFO - Core components setup complete
+2025-07-04 16:47:34,697 - INFO - Remote Ollama model 'qwen3:8b' connected successfully at http://35.173.131.200:11434
+2025-07-04 16:47:34,726 - INFO - Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
+2025-07-04 16:47:34,846 - INFO - Loaded existing vector store
+2025-07-04 16:47:34,847 - INFO - QA chain setup complete
+2025-07-04 16:47:34,847 - INFO - Local RAG System initialized successfully
+2025-07-04 16:47:34,878 - WARNING -  * Debugger is active!
+2025-07-04 16:47:34,883 - INFO -  * Debugger PIN: 646-366-996
+2025-07-04 16:47:41,389 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-04 16:47:41,390 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading
+2025-07-04 16:47:41,391 - INFO -  * Detected change in 'C:\\Users\\dahan\\Documents\\Stage PFE DXC cdg\\Project\\Backend\\app.py', reloading

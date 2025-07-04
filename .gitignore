@@ -1,11 +1,7 @@
 .env                  
 *.log                 
-
 chroma_db_local/      
-local_rag_system.py  
-
+local_rag_system.py
 __pycache__/          
-
-
 venv/                
 node_modules/        

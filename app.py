@@ -39,6 +39,8 @@ import json
 from datetime import datetime, timezone
 import os
 from flask_cors import CORS, cross_origin
+import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 try:
     from local_rag_system import LocalRAGSystem
@@ -76,8 +78,13 @@ app.config.update(
 )
 
 # CORS configuration
-cors = CORS(app)
-
+#cors = CORS(app)
+CORS(app, 
+     origins=["http://localhost:3000"],  # Specific origin instead of wildcard
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+)
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
@@ -1053,6 +1060,122 @@ def delete_history_item(history_id):
         return jsonify({"error": "History item not found"}), 404
     
     return jsonify({"message": "History item deleted successfully"})
+def is_gemini_api_key(api_key):
+    """Check if API key is for Gemini (starts with AIza)"""
+    return api_key and api_key.startswith("AIza")
+
+def configure_gemini_client(api_key):
+    """Configure Gemini client with API key"""
+    try:
+        genai.configure(api_key=api_key)
+        return True
+    except Exception as e:
+        print(f"Error configuring Gemini: {e}")
+        return False
+
+def chat_with_gemini_stream(messages, api_key, model_name="gemini-1.5-flash"):
+    """
+    Send chat to Gemini API and yield streaming responses
+    """
+    try:
+        # Configure Gemini
+        if not configure_gemini_client(api_key):
+            raise Exception("Failed to configure Gemini client")
+        
+        # Initialize model
+        model = genai.GenerativeModel(model_name)
+        
+        # Convert messages to Gemini format - take the last message content
+        if messages and len(messages) > 0:
+            prompt = messages[-1]["content"]
+        else:
+            raise Exception("No messages provided")
+        
+        # Configure safety settings (more permissive for test case generation)
+        safety_settings = {
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
+        
+        # Generate streaming response
+        response = model.generate_content(
+            prompt,
+            safety_settings=safety_settings,
+            stream=True
+        )
+        
+        # Yield chunks as they come
+        for chunk in response:
+            if chunk.text:
+                yield chunk.text
+                
+    except Exception as e:
+        print(f"Error in Gemini chat: {e}")
+        yield f"Error communicating with Gemini: {str(e)}"
+def get_global_api_key():
+    """Get the global API key from environment variables"""
+    # Try Gemini first, then Claude
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    claude_key = os.getenv("CLAUDE_API_KEY")
+    
+    return gemini_key or claude_key
+
+def is_gemini_api_key(api_key):
+    """Check if API key is for Gemini (starts with AIza)"""
+    return api_key and api_key.startswith("AIza")
+
+def configure_gemini_client(api_key):
+    """Configure Gemini client with API key"""
+    try:
+        genai.configure(api_key=api_key)
+        return True
+    except Exception as e:
+        print(f"Error configuring Gemini: {e}")
+        return False
+
+def chat_with_gemini_stream(messages, api_key, model_name="gemini-1.5-flash"):
+    """
+    Send chat to Gemini API and yield streaming responses
+    """
+    try:
+        # Configure Gemini
+        if not configure_gemini_client(api_key):
+            raise Exception("Failed to configure Gemini client")
+        
+        # Initialize model
+        model = genai.GenerativeModel(model_name)
+        
+        # Convert messages to Gemini format - take the last message content
+        if messages and len(messages) > 0:
+            prompt = messages[-1]["content"]
+        else:
+            raise Exception("No messages provided")
+        
+        # Configure safety settings (more permissive for test case generation)
+        safety_settings = {
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
+        
+        # Generate streaming response
+        response = model.generate_content(
+            prompt,
+            safety_settings=safety_settings,
+            stream=True
+        )
+        
+        # Yield chunks as they come
+        for chunk in response:
+            if chunk.text:
+                yield chunk.text
+                
+    except Exception as e:
+        print(f"Error in Gemini chat: {e}")
+        yield f"Error communicating with Gemini: {str(e)}"
 
 @app.route("/chat_with_assistant", methods=["POST"])
 @login_required
@@ -1073,26 +1196,10 @@ def chat_with_test_cases():
     print(f"Message: {user_message[:100]}..." if len(user_message) > 100 else f"Message: {user_message}")
     print(f"Direct mode: {direct_mode}, Active history ID: {active_history_id}")
     
-    # Check API key early
-    try:
-        api_key = get_user_api_key_from_settings(username, project_id)  # CHANGED
-        if api_key:
-            # Mask most of the key for security
-            masked_key = f"{api_key[:8]}...{api_key[-4:]}" if len(api_key) > 12 else "***masked***"
-            print(f"Using API key: {masked_key}")
-        else:
-            error_msg = "No API key available"
-            print(f"ERROR: {error_msg}")
-            return Response(
-                f"data: {json.dumps({'error': error_msg})}\n\n", 
-                content_type="text/event-stream",
-                headers={
-                    'Cache-Control': 'no-cache',
-                    'Connection': 'keep-alive'
-                }
-            )
-    except Exception as e:
-        error_msg = f"Error retrieving API key: {str(e)}"
+    # Get Gemini API key from environment
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
+        error_msg = "No Gemini API key configured in environment variables"
         print(f"ERROR: {error_msg}")
         return Response(
             f"data: {json.dumps({'error': error_msg})}\n\n", 
@@ -1100,10 +1207,13 @@ def chat_with_test_cases():
             headers={
                 'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive'
+                # REMOVED the duplicate CORS headers
             }
         )
     
-    # Create a more direct instruction for the AI to modify test cases
+    print(f"Using Gemini API for chat")
+    
+    # Create context for the AI
     if direct_mode:
         context_parts = [
             "You are a test case assistant. Your primary job is to directly modify test cases based on user requests.",
@@ -1146,44 +1256,32 @@ def chat_with_test_cases():
     # Add more direct instructions for modification requests
     if is_modification_request and direct_mode:
         context_parts.append("This is a modification request. You MUST return the COMPLETE updated test cases in a code block.")
-        # Enhanced instruction for more direct responses
         context_parts.append("IMPORTANT: Respond ONLY with:\n1. The COMPLETE updated test cases in a code block\n2. Exactly: 'Modifications appliquées.'")
     
     context = "\n\n".join(context_parts)
     
     def generate():
         try:
-            # First, try to initialize the Anthropic client
-            try:
-                anthropic_client = anthropic.Anthropic(api_key=api_key)
-            except Exception as client_error:
-                error_msg = f"Error initializing AI client: {str(client_error)}"
-                print(f"ERROR: {error_msg}")
-                yield f"data: {json.dumps({'error': error_msg})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
-                
             full_response = ""
-            print("Starting AI stream processing...")
+            print(f"Starting Gemini stream processing...")
+            
+            # Prepare messages
+            messages = [{"role": "user", "content": context}]
             
             try:
-                # Stream processing
-                messages = [{"role": "user", "content": context}]
+                # Use Gemini API only
+                response_generator = chat_with_gemini_stream(messages, gemini_api_key)
                 
-                with anthropic_client.messages.stream(
-                    model="claude-3-haiku-20240307",
-                    max_tokens=4000,
-                    messages=messages
-                ) as stream:
-                    for event in stream:
-                        if event.type == "content_block_delta":
-                            if event.delta.text:
-                                full_response += event.delta.text
-                                yield f"data: {json.dumps({'chunk': event.delta.text})}\n\n"
+                # Stream the response
+                for chunk in response_generator:
+                    if chunk:
+                        full_response += chunk
+                        yield f"data: {json.dumps({'chunk': chunk})}\n\n"
                 
-                print("AI stream completed successfully")
+                print(f"Gemini stream completed successfully")
+                
             except Exception as stream_error:
-                error_msg = f"Error during AI streaming: {str(stream_error)}"
+                error_msg = f"Error during Gemini streaming: {str(stream_error)}"
                 print(f"ERROR: {error_msg}")
                 yield f"data: {json.dumps({'error': error_msg})}\n\n"
                 yield "data: [DONE]\n\n"
@@ -1227,7 +1325,7 @@ def chat_with_test_cases():
             yield "data: [DONE]\n\n"
             
         except Exception as e:
-            error_msg = f"Unexpected error in chat processing: {str(e)}"
+            error_msg = f"Unexpected error in Gemini chat processing: {str(e)}"
             print(f"ERROR: {error_msg}")
             import traceback
             traceback.print_exc()
@@ -1236,11 +1334,92 @@ def chat_with_test_cases():
     
     return Response(generate(), content_type="text/event-stream", headers={
         'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type'
+        'Connection': 'keep-alive'
+        # REMOVED the duplicate CORS headers - let flask-cors handle it
     })
 
+# 4. ADD A NEW ENDPOINT TO CHECK GLOBAL API SERVICE:
+
+@app.route("/check_global_api_service", methods=["GET"])
+@login_required
+def check_global_api_service():
+    """Check if Gemini API service is configured"""
+    try:
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        
+        if not gemini_api_key:
+            return jsonify({
+                "configured": False,
+                "service": None,
+                "message": "No Gemini API key configured"
+            })
+        
+        return jsonify({
+            "configured": True,
+            "service": "gemini",
+            "service_name": "Gemini AI",
+            "message": "Gemini API configured"
+        })
+        
+    except Exception as e:
+        print(f"Error checking Gemini API service: {e}")
+        return jsonify({"error": str(e)}), 500
+def validate_gemini_api_key(api_key):
+    """Validate Gemini API key"""
+    if not api_key or not api_key.strip():
+        return False, "API key is required"
+    
+    api_key = api_key.strip()
+    
+    if not api_key.startswith("AIza"):
+        return False, "Invalid Gemini API key format (should start with 'AIza')"
+    
+    try:
+        # Configure Gemini
+        if not configure_gemini_client(api_key):
+            return False, "Invalid Gemini API key"
+        
+        # Test with a simple request
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content("Hi")
+        
+        return True, "Gemini API key is valid"
+    
+    except Exception as e:
+        return False, f"Gemini API key validation failed: {str(e)}"
+def validate_api_key(api_key):
+    """Validate API key for both Claude and Gemini"""
+    if not api_key or not api_key.strip():
+        return False, "API key is required"
+    
+    api_key = api_key.strip()
+    
+    try:
+        if is_gemini_api_key(api_key):
+            # Validate Gemini API key
+            if not configure_gemini_client(api_key):
+                return False, "Invalid Gemini API key"
+            
+            # Test with a simple request
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            response = model.generate_content("Hi")
+            
+            return True, "Gemini API key is valid"
+        else:
+            # Validate Claude API key (existing logic)
+            client = anthropic.Anthropic(api_key=api_key)
+            
+            response = client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=10,
+                messages=[{"role": "user", "content": "Hi"}]
+            )
+            
+            return True, "Claude API key is valid"
+    
+    except Exception as e:
+        service_name = "Gemini" if is_gemini_api_key(api_key) else "Claude"
+        return False, f"{service_name} API key validation failed: {str(e)}"
 @app.route("/extract_text", methods=["POST"])
 @login_required
 def extract_text():
@@ -2083,20 +2262,19 @@ def get_effective_llm_service(username, project_id=None):
         return None
 
 def get_user_api_key_from_settings(username, project_id=None, settings=None):
-    """Get API key - now from project settings instead of user settings"""
+    """Get API key from user settings, supporting both Claude and Gemini"""
     try:
-        if project_id:
-            return get_project_api_key(project_id)
-        else:
-            # No project context, no API key available
+        if not settings:
+            settings = get_user_settings(username, project_id)
+        
+        if not settings:
             return None
         
+        # Return Gemini key if available, otherwise Claude key
+        return settings.get("gemini_api_key") or settings.get("claude_api_key")
+        
     except Exception as e:
-        print(f"Error getting API key: {e}")
-        return None
-                
-    except Exception as e:
-        print(f"Error determining effective LLM service: {e}")
+        print(f"Error getting API key from settings: {e}")
         return None
 
 
@@ -2319,7 +2497,7 @@ def save_user_llm_settings(username, llm_choice, api_key=None, project_id=None):
         # Prepare the data to save
         settings_data = {
             "user": username,
-            "llm_service": llm_choice,  # "local" or "claude"
+            "llm_service": llm_choice,  # "local", "claude", or "gemini"
             "updated_at": datetime.now(timezone.utc)
         }
         
@@ -2328,23 +2506,30 @@ def save_user_llm_settings(username, llm_choice, api_key=None, project_id=None):
             settings_data["project_id"] = project_id
         
         # Handle API key
-        if llm_choice == "claude":
+        if llm_choice in ["claude", "gemini"]:
             if not api_key:
-                return False, "API key is required for Claude"
+                return False, "API key is required for Claude/Gemini"
             
-            # Validate API key
-            is_valid, message = validate_claude_api_key(api_key)
+            # Validate API key (now works for both Claude and Gemini)
+            is_valid, message = validate_api_key(api_key)
             if not is_valid:
                 return False, f"API key validation failed: {message}"
             
             # Store API key directly (no encryption)
-            settings_data["claude_api_key"] = api_key  # CHANGED: No encryption
+            if is_gemini_api_key(api_key):
+                settings_data["gemini_api_key"] = api_key
+                settings_data["claude_api_key"] = None
+            else:
+                settings_data["claude_api_key"] = api_key
+                settings_data["gemini_api_key"] = None
+                
             settings_data["api_key_validated"] = True
             settings_data["api_key_validated_at"] = datetime.now(timezone.utc)
             
         elif llm_choice == "local":
-            # Remove API key if switching to local
+            # Remove API keys if switching to local
             settings_data["claude_api_key"] = None
+            settings_data["gemini_api_key"] = None
             settings_data["api_key_validated"] = False
         
         # Check if settings already exist
@@ -2822,9 +3007,7 @@ def get_project_info_for_users(project_id):
         return jsonify({"error": str(e)}), 500
 @app.after_request
 def after_request(response):
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    # Don't set any CORS headers here since CORS() already handles it
     return response
 
 if __name__ == "__main__":
