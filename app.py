@@ -341,8 +341,54 @@ def get_status_label(status):
     }
     return status_labels.get(status, status)
 
-def generate_test_case_prompt(requirements, format_type="default", context="", example_case=""):
-    example_format_default = """Test Case 1: Valid Login
+def generate_test_case_prompt(requirements, format_type="default", context="", example_case="", language="en"):
+    """Generate the prompt for test case generation with language support"""
+    
+    if language == "fr":
+        # French prompts
+        if format_type == "custom" and example_case.strip():
+            example_format = example_case
+        elif format_type == "gherkin":
+            example_format = example_case if example_case.strip() else "Format Gherkin"
+        else:
+            example_format = """Cas de Test 1: Connexion Valide
+Description: L'utilisateur se connecte avec des identifiants valides
+Prérequis: L'utilisateur a un compte valide
+Étapes:
+    1. Naviguer vers la page de connexion.
+    2. Saisir un email et mot de passe valides.
+    3. Cliquer sur "Se connecter".
+Résultat Attendu: L'utilisateur est connecté avec succès et redirigé vers le tableau de bord.
+
+Cas de Test 2: Connexion Invalide
+Description: L'utilisateur tente de se connecter avec des identifiants invalides
+Prérequis: L'utilisateur est sur la page de connexion
+Étapes:
+    1. Accéder à la page de connexion.
+    2. Saisir un email valide et un mot de passe invalide.
+    3. Cliquer sur "Se connecter".
+Résultat Attendu: Un message d'erreur s'affiche et l'utilisateur reste sur la page de connexion.
+"""
+
+        instruction = f"""
+Générez des cas de test pour l'exigence suivante en utilisant le format spécifié.
+{"Contexte fonctionnel: " + context if context else ""} 
+Exigence: {requirements}
+Format:
+{example_format}
+
+Concentrez-vous sur :
+1. Les scénarios de test positifs et négatifs
+2. Les cas limites et les conditions aux bornes
+3. Des étapes de test claires et réalisables
+4. Les résultats attendus pour chaque cas de test
+5. Les prérequis et les exigences de données de test
+
+Fournissez au moins 5-8 cas de test complets couvrant différents scénarios.
+"""
+    else:
+        # English prompts (your existing logic)
+        example_format_default = """Test Case 1: Valid Login
 Description: User logs in with valid credentials
 Preconditions: User has a valid account
 Steps:
@@ -361,20 +407,30 @@ Steps:
 Expected Result: An error message is displayed, and the user remains on the login page.
 """
 
-    if format_type == "custom" and example_case.strip():
-        example_format = example_case
-    elif format_type == "gherkin":
-        example_format = example_case if example_case.strip() else "Gherkin format"
-    else:
-        example_format = example_format_default
+        if format_type == "custom" and example_case.strip():
+            example_format = example_case
+        elif format_type == "gherkin":
+            example_format = example_case if example_case.strip() else "Gherkin format"
+        else:
+            example_format = example_format_default
 
-    instruction = f"""
+        instruction = f"""
 Generate test cases for the following requirement using the specified format.
 {"Functional context: " + context if context else ""} 
 Requirement: {requirements}
 Format:
 {example_format}
+
+Focus on:
+1. Both positive and negative test scenarios
+2. Edge cases and boundary conditions
+3. Clear, actionable test steps
+4. Expected results for each test case
+5. Prerequisites and test data requirements
+
+Provide at least 5-8 comprehensive test cases covering different scenarios.
 """
+    
     return instruction
 
 def extract_text_from_pdf(file):
@@ -404,26 +460,30 @@ def extract_text_from_docx(file):
 @app.route("/check_ai_services", methods=["GET"])
 @login_required
 def check_ai_services_enhanced():
-    """Enhanced check for available AI services based on user settings"""
+    """Check for available AI services based on PROJECT settings only"""
     username = session["user"]
     project_id = request.args.get("project_id")
     
     try:
-        # Get user settings
-        settings = get_user_settings(username, project_id)
+        if not project_id:
+            return jsonify({
+                "claude_available": False,
+                "local_rag_available": check_rag_availability(),
+                "effective_service": "local" if check_rag_availability() else None,
+                "project_configured": False,
+                "message": "No project selected"
+            })
         
-        # Check service availability
-        claude_available = bool(get_user_api_key_from_settings(username, project_id, settings))
-        local_rag_available = check_rag_availability()
-        effective_service = get_effective_llm_service(username, project_id)
+        # Only check project-level settings
+        effective_service = get_effective_llm_for_project(project_id)
+        project_settings = get_project_llm_settings(project_id)
         
         services = {
-            "claude_available": claude_available,
-            "local_rag_available": local_rag_available,
+            "claude_available": bool(project_settings and project_settings.get("claude_api_key")),
+            "local_rag_available": check_rag_availability(),
             "effective_service": effective_service,
-            "user_preference": settings.get("llm_service", "auto") if settings else "auto",
-            "has_user_settings": bool(settings and settings.get("llm_service")),
-            "project_specific": bool(project_id and settings and settings.get("project_id"))
+            "project_configured": bool(project_settings),
+            "manager_configured": bool(project_settings and project_settings.get("manager"))
         }
         
         return jsonify(services)
@@ -480,91 +540,11 @@ def check_session():
             }), 200
     return jsonify({"logged_in": False, "error": "Not authenticated"}), 401
 
-# API Key Management
-@app.route("/get_api_key", methods=["GET"])
-@login_required
-def get_api_key_for_frontend():
-    username = session["user"]
-    project_id = request.args.get("project_id")
-    
-    try:
-        api_key = get_user_api_key(username, project_id)
-        
-        if not api_key:
-            return jsonify({"error": "No API key configured. Please add your Claude API key in Settings."}), 404
-            
-        return jsonify({"api_key": api_key})
-    except Exception as e:
-        print(f"Error getting API key: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api_keys", methods=["POST"])
-@login_required
-def create_api_key():
-    username = session["user"]
-    data = request.json
-    api_key = data.get("api_key")
-    project_id = data.get("project_id")
-    
-    if not api_key:
-        return jsonify({"error": "API key is required"}), 400
-    
-    # Store the API key directly (no encryption)
-    stored_key = api_key  # CHANGED: No encryption
-    
-    query = {"user": username}
-    if project_id:
-        query["project_id"] = project_id
-    else:
-        query["project_id"] = {"$exists": False}
-    
-    existing_key = api_keys_collection.find_one(query)
-    
-    if existing_key:
-        api_keys_collection.update_one(
-            {"_id": existing_key["_id"]},
-            {"$set": {"api_key": stored_key}}
-        )
-    else:
-        key_data = {
-            "user": username,
-            "api_key": stored_key,
-            "created_at": datetime.now(timezone.utc)
-        }
-        if project_id:
-            key_data["project_id"] = project_id
-        
-        api_keys_collection.insert_one(key_data)
-    
-    return jsonify({"message": "API key saved successfully"})
-
-@app.route("/api_keys/<key_id>", methods=["DELETE"])
-@login_required
-def delete_api_key(key_id):
-    username = session["user"]
-    
-    try:
-        object_id = ObjectId(key_id)
-    except:
-        return jsonify({"error": "Invalid key ID"}), 400
-    
-    result = api_keys_collection.delete_one({
-        "_id": object_id,
-        "user": username
-    })
-    
-    if result.deleted_count == 0:
-        return jsonify({"error": "Key not found or not authorized"}), 404
-    
-    return jsonify({"message": "API key deleted successfully"})
-
-# Main test case generation endpoint with fallback to local RAG
-# Replace the existing generate_test_cases_endpoint_enhanced with this updated version
 
 @app.route("/generate_test_cases", methods=["POST", "OPTIONS"])
 @login_required
 def generate_test_cases():
-    """Generate test cases using project-level LLM settings"""
+    """Generate test cases using project-level LLM settings ONLY"""
     try:
         data = request.json
         requirements = data.get("requirements", "")
@@ -583,7 +563,7 @@ def generate_test_cases():
         print(f"Generating test cases for user: {username}")
         print(f"Project ID: {project_id}")
         
-        # Determine which AI service to use based on PROJECT settings
+        # Determine which AI service to use based on PROJECT settings ONLY
         effective_service = get_effective_llm_for_project(project_id) if project_id else None
         
         if not effective_service:
@@ -602,7 +582,8 @@ def generate_test_cases():
                     "suggestion": "Please ask your project manager to configure the LLM settings for this project.",
                     "details": {
                         "project_configured": False,
-                        "action_required": "Contact project manager"
+                        "action_required": "Contact project manager",
+                        "message": "Only project managers can configure AI settings."
                     }
                 }), 400
         
@@ -615,7 +596,10 @@ def generate_test_cases():
             if not api_key:
                 return jsonify({
                     "error": "Claude API key not configured for this project.",
-                    "suggestion": "Please ask your project manager to add the Claude API key."
+                    "suggestion": "Please ask your project manager to add the Claude API key.",
+                    "details": {
+                        "action_required": "Contact project manager"
+                    }
                 }), 400
             
             # Generate test cases using Claude with project API key
@@ -633,7 +617,8 @@ def generate_test_cases():
         return jsonify({
             "test_cases": test_cases,
             "service_used": effective_service,
-            "project_configured": True
+            "project_configured": True,
+            "configured_by": "project_manager"
         })
         
     except Exception as e:
@@ -641,14 +626,21 @@ def generate_test_cases():
         return jsonify({"error": str(e)}), 500
 
 def generate_test_cases_claude(requirements, format_type, context, example_case, requirement_id, requirement_title, api_key, project_id=None):
-    """Generate test cases using Claude API with project-level API key"""
+    """Generate test cases using Claude API with project-level API key and language"""
     try:
+        # Get project language if project_id is provided
+        project_language = "en"  # default
+        if project_id:
+            project = projects_collection.find_one({"id": project_id})
+            if project:
+                project_language = project.get('language', 'en')
+        
         # Create Anthropic client with project API key
         anthropic_client = anthropic.Anthropic(api_key=api_key)
         
-        # Generate the test case prompt
-        test_case_instruction = generate_test_case_prompt(requirements, format_type, context, example_case)
-        
+        # NOW PASS 5 PARAMETERS INCLUDING LANGUAGE
+        test_case_instruction = generate_test_case_prompt(requirements, format_type, context, example_case, project_language)
+       
         # Call Claude API
         response = anthropic_client.messages.create(
             model="claude-3-haiku-20240307",
@@ -663,7 +655,7 @@ def generate_test_cases_claude(requirements, format_type, context, example_case,
         
         history_entry = {
             "user": username,
-            "project_id": project_id,  # Add this line
+            "project_id": project_id,
             "requirement_id": requirement_id,
             "requirement_title": requirement_title,
             "requirements": requirements,
@@ -672,6 +664,7 @@ def generate_test_cases_claude(requirements, format_type, context, example_case,
             "context": context,
             "example_case": example_case,
             "ai_service": "claude",
+            "language": project_language,  # Add this line
             "timestamp": datetime.now(timezone.utc),
             "used_project_settings": True
         }
@@ -685,20 +678,96 @@ def generate_test_cases_claude(requirements, format_type, context, example_case,
         print(f"Claude API error: {e}")
         raise Exception(f"Claude API error: {str(e)}")
 
+# Find the remaining generate_test_cases_stream function around line 786 and UPDATE it to this:
+
+@app.route("/generate_test_cases_stream", methods=["POST"])
+@login_required
+@limiter.limit("5 per minute")
+def generate_test_cases_stream():
+    data = request.json
+    requirements = data.get("requirements", "")
+    format_type = data.get("format_type", "default")
+    context = data.get("context", "")
+    example_case = data.get("example_case", "")
+    project_id = data.get("project_id", "")
+    
+    if not requirements:
+        return jsonify({"error": "No requirements provided"}), 400
+    
+    # Get project language - ADD THIS SECTION
+    project_language = "en"  # default
+    if project_id:
+        project = projects_collection.find_one({"id": project_id})
+        if project:
+            project_language = project.get('language', 'en')
+    
+    # NOW PASS 5 PARAMETERS INCLUDING LANGUAGE - UPDATE THIS LINE
+    test_case_instruction = generate_test_case_prompt(requirements, format_type, context, example_case, project_language)
+    username = session["user"]
+    
+    def generate():
+        try:
+            full_response = ""
+            anthropic_client = get_anthropic_client(username, project_id)
+            
+            with anthropic_client.messages.stream(
+                model="claude-3-haiku-20240307",
+                max_tokens=4000,
+                messages=[{"role": "user", "content": test_case_instruction}]
+            ) as stream:
+                for event in stream:
+                    if event.type == "content_block_delta":
+                        if event.delta.text:
+                            full_response += event.delta.text
+                            yield f"data: {json.dumps({'chunk': event.delta.text})}\n\n"
+                            
+            # Save to history after completion - ADD LANGUAGE TO HISTORY
+            history_data = {
+                "user": username,
+                "test_cases": full_response,
+                "timestamp": datetime.now(timezone.utc),
+                "requirements": requirements,
+                "context": context,
+                "project_id": project_id,
+                "language": project_language  # ADD THIS LINE
+            }
+            history_collection.insert_one(history_data)
+            
+            yield f"data: {json.dumps({'complete': True})}\n\n"
+            
+        except Exception as e:
+            print(f"Streaming error: {e}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    
+    return Response(generate(), content_type="text/event-stream")
+
 # Replace the generate_test_cases_rag function with this:
 
 def generate_test_cases_rag(requirements, format_type, context, example_case, requirement_id, requirement_title, project_id=None):
-    """Generate test cases using local RAG system"""
+    """Generate test cases using local RAG system with language support"""
     try:
         if not check_rag_availability():
             raise Exception("Local RAG system not available")
+        
+        # Get project language if project_id is provided
+        project_language = "en"  # default
+        if project_id:
+            project = projects_collection.find_one({"id": project_id})
+            if project:
+                project_language = project.get('language', 'en')
         
         # Create a formatted prompt that works with your RAG system
         full_context = ""
         if context:
             full_context = f"Context: {context}\n\n"
         
-        full_requirement = f"{full_context}Requirement: {requirements}"
+        # Add language instruction
+        if project_language == 'fr':
+            language_instruction = "Veuillez répondre en français.\n\n"
+        else:
+            language_instruction = "Please respond in English.\n\n"
+        
+        full_requirement = f"{language_instruction}{full_context}Requirement: {requirements}"
         
         # Call your local RAG system with the correct method signature
         test_cases = local_rag_system.generate_test_cases(full_requirement, context)
@@ -708,7 +777,7 @@ def generate_test_cases_rag(requirements, format_type, context, example_case, re
         
         history_entry = {
             "user": username,
-            "project_id": project_id,  # Add this line
+            "project_id": project_id,
             "requirement_id": requirement_id,
             "requirement_title": requirement_title,
             "requirements": requirements,
@@ -717,6 +786,7 @@ def generate_test_cases_rag(requirements, format_type, context, example_case, re
             "context": context,
             "example_case": example_case,
             "ai_service": "local_rag",
+            "language": project_language,  # Add this line
             "timestamp": datetime.now(timezone.utc),
             "used_project_settings": True
         }
@@ -731,38 +801,86 @@ def generate_test_cases_rag(requirements, format_type, context, example_case, re
         raise Exception(f"Local RAG error: {str(e)}")
 
 
-def generate_test_case_prompt(requirements, format_type, context, example_case):
-    """Generate the prompt for test case generation"""
-    prompt = f"""Generate comprehensive test cases for the following software requirement:
-
-REQUIREMENT:
-{requirements}
-
-"""
+def generate_test_case_prompt(requirements, format_type="default", context="", example_case="", language="en"):
+    """Generate the prompt for test case generation with language support"""
     
-    if context:
-        prompt += f"""CONTEXT:
-{context}
+    if language == "fr":
+        # French prompts
+        if format_type == "custom" and example_case.strip():
+            example_format = example_case
+        elif format_type == "gherkin":
+            example_format = example_case if example_case.strip() else "Format Gherkin"
+        else:
+            example_format = """Cas de Test 1: Connexion Valide
+Description: L'utilisateur se connecte avec des identifiants valides
+Prérequis: L'utilisateur a un compte valide
+Étapes:
+    1. Naviguer vers la page de connexion.
+    2. Saisir un email et mot de passe valides.
+    3. Cliquer sur "Se connecter".
+Résultat Attendu: L'utilisateur est connecté avec succès et redirigé vers le tableau de bord.
 
+Cas de Test 2: Connexion Invalide
+Description: L'utilisateur tente de se connecter avec des identifiants invalides
+Prérequis: L'utilisateur est sur la page de connexion
+Étapes:
+    1. Accéder à la page de connexion.
+    2. Saisir un email valide et un mot de passe invalide.
+    3. Cliquer sur "Se connecter".
+Résultat Attendu: Un message d'erreur s'affiche et l'utilisateur reste sur la page de connexion.
 """
-    
-    if example_case:
-        prompt += f"""EXAMPLE TEST CASE FORMAT:
-{example_case}
 
-"""
-    
-    if format_type == "gherkin":
-        prompt += """Please format the test cases using Gherkin syntax (Given-When-Then).
-"""
-    elif format_type == "steps":
-        prompt += """Please format the test cases as numbered step-by-step instructions.
+        instruction = f"""
+Générez des cas de test pour l'exigence suivante en utilisant le format spécifié.
+{"Contexte fonctionnel: " + context if context else ""} 
+Exigence: {requirements}
+Format:
+{example_format}
+
+Concentrez-vous sur :
+1. Les scénarios de test positifs et négatifs
+2. Les cas limites et les conditions aux bornes
+3. Des étapes de test claires et réalisables
+4. Les résultats attendus pour chaque cas de test
+5. Les prérequis et les exigences de données de test
+
+Fournissez au moins 5-8 cas de test complets couvrant différents scénarios.
 """
     else:
-        prompt += """Please provide clear, detailed test cases.
+        # English prompts (your existing logic)
+        example_format_default = """Test Case 1: Valid Login
+Description: User logs in with valid credentials
+Preconditions: User has a valid account
+Steps:
+    1. Navigate to the login page.
+    2. Enter valid email and password.
+    3. Click on "Login".
+Expected Result: User is successfully logged in and redirected to the dashboard.
+
+Test Case 2: Invalid Login
+Description: User attempts to log in with invalid credentials
+Preconditions: User is on the login page
+Steps:
+    1. Access the login page.
+    2. Enter valid email and invalid password.
+    3. Click on "Login".
+Expected Result: An error message is displayed, and the user remains on the login page.
 """
-    
-    prompt += """
+
+        if format_type == "custom" and example_case.strip():
+            example_format = example_case
+        elif format_type == "gherkin":
+            example_format = example_case if example_case.strip() else "Gherkin format"
+        else:
+            example_format = example_format_default
+
+        instruction = f"""
+Generate test cases for the following requirement using the specified format.
+{"Functional context: " + context if context else ""} 
+Requirement: {requirements}
+Format:
+{example_format}
+
 Focus on:
 1. Both positive and negative test scenarios
 2. Edge cases and boundary conditions
@@ -770,9 +888,10 @@ Focus on:
 4. Expected results for each test case
 5. Prerequisites and test data requirements
 
-Provide at least 5-8 comprehensive test cases covering different scenarios."""
+Provide at least 5-8 comprehensive test cases covering different scenarios.
+"""
     
-    return prompt
+    return instruction
 
 # Additional helper functions that you might need to implement
 
@@ -828,88 +947,40 @@ def select_project(project_id):
 @app.route("/check_api_key_status", methods=["GET"])
 @login_required
 def check_api_key_status():
-    """Check if user has any API keys configured"""
+    """Check if project has API keys configured - MANAGER ACCESS ONLY"""
     username = session["user"]
     project_id = request.args.get("project_id")
     
     try:
-        # Check new settings system
-        settings_api_key = get_user_api_key_from_settings(username, project_id)
+        # Check if user is manager/admin
+        user = users_collection.find_one({"username": username})
+        if not user or user.get("role") not in ["manager", "admin"]:
+            return jsonify({
+                "error": "Only managers can view API key status",
+                "user_role": user.get("role", "user") if user else "user"
+            }), 403
         
-        # Check old system
-        legacy_api_key = get_user_api_key(username, project_id)
+        if not project_id:
+            return jsonify({
+                "has_project_api_key": False,
+                "message": "No project selected"
+            })
+        
+        # Check project-level API key only
+        project_settings = get_project_llm_settings(project_id)
+        has_project_key = bool(project_settings and project_settings.get("claude_api_key"))
         
         status = {
-            "has_settings_api_key": bool(settings_api_key),
-            "has_legacy_api_key": bool(legacy_api_key),
-            "has_any_api_key": bool(settings_api_key or legacy_api_key),
-            "recommended_action": None
+            "has_project_api_key": has_project_key,
+            "project_configured": bool(project_settings),
+            "effective_service": get_effective_llm_for_project(project_id)
         }
-        
-        if not status["has_any_api_key"]:
-            status["recommended_action"] = "add_api_key"
-        elif status["has_legacy_api_key"] and not status["has_settings_api_key"]:
-            status["recommended_action"] = "migrate_to_settings"
-        else:
-            status["recommended_action"] = "none"
         
         return jsonify(status)
         
     except Exception as e:
         print(f"Error checking API key status: {e}")
         return jsonify({"error": str(e)}), 500
-@app.route("/generate_test_cases_stream", methods=["POST"])
-@login_required
-@limiter.limit("5 per minute")
-def generate_test_cases_stream():
-    data = request.json
-    requirements = data.get("requirements", "")
-    format_type = data.get("format_type", "default")
-    context = data.get("context", "")
-    example_case = data.get("example_case", "")
-    project_id = data.get("project_id", "")
-    
-    if not requirements:
-        return jsonify({"error": "No requirements provided"}), 400
-    
-    test_case_instruction = generate_test_case_prompt(requirements, format_type, context, example_case)
-    username = session["user"]
-    
-    def generate():
-        try:
-            full_response = ""
-            anthropic_client = get_anthropic_client(username, project_id)
-            
-            with anthropic_client.messages.stream(
-                model="claude-3-haiku-20240307",
-                max_tokens=4000,
-                messages=[{"role": "user", "content": test_case_instruction}]
-            ) as stream:
-                for event in stream:
-                    if event.type == "content_block_delta":
-                        if event.delta.text:
-                            full_response += event.delta.text
-                            yield f"data: {json.dumps({'chunk': event.delta.text})}\n\n"
-                            
-            # Save to history after completion
-            history_data = {
-                "user": username,
-                "test_cases": full_response,
-                "timestamp": datetime.now(timezone.utc),
-                "requirements": requirements,
-                "context": context,
-                "project_id": project_id
-            }
-            history_collection.insert_one(history_data)
-            
-            yield f"data: {json.dumps({'complete': True})}\n\n"
-            
-        except Exception as e:
-            print(f"Streaming error: {e}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-    
-    return Response(generate(), content_type="text/event-stream")
-
 @app.route("/save_test_cases", methods=["POST"])
 @login_required
 def save_test_cases():
@@ -1177,6 +1248,8 @@ def chat_with_gemini_stream(messages, api_key, model_name="gemini-1.5-flash"):
         print(f"Error in Gemini chat: {e}")
         yield f"Error communicating with Gemini: {str(e)}"
 
+# Replace the chat_with_test_cases function in app.py with this fixed version:
+
 @app.route("/chat_with_assistant", methods=["POST"])
 @login_required
 def chat_with_test_cases():
@@ -1207,7 +1280,6 @@ def chat_with_test_cases():
             headers={
                 'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive'
-                # REMOVED the duplicate CORS headers
             }
         )
     
@@ -1217,11 +1289,12 @@ def chat_with_test_cases():
     if direct_mode:
         context_parts = [
             "You are a test case assistant. Your primary job is to directly modify test cases based on user requests.",
-            "IMPORTANT: When the user asks for changes, you MUST output the COMPLETE updated test cases in a code block.",
-            "Always add ```<language> before and ``` after the code block.",
-            "Include ALL test cases in your output, not just the modified ones.",
-            "After showing the updated test cases, add a brief confirmation message like 'Modifications appliquées.'",
-            "DO NOT explain what changes you're making beforehand - show the complete updated test cases immediately."
+            "CRITICAL INSTRUCTIONS:",
+            "1. When the user asks for changes, you MUST output the COMPLETE updated test cases in a code block.",
+            "2. Use the exact format: ```testcases followed by the complete test cases, then ```",
+            "3. Include ALL test cases in your output, not just the modified ones.",
+            "4. After the code block, add EXACTLY this message: 'Modifications appliquées avec succès.'",
+            "5. DO NOT explain what changes you're making beforehand - show the complete updated test cases immediately."
         ]
     else:
         context_parts = [
@@ -1239,7 +1312,14 @@ def chat_with_test_cases():
         })
         
         if project:
+            project_language = project.get('language', 'en')
             context_parts.append(f"Project Context: {project.get('name', '')} - {project.get('context', '')}")
+            
+            # Add language-specific instructions
+            if project_language == 'fr':
+                context_parts.append("Veuillez répondre en français.")
+            else:
+                context_parts.append("Please respond in English.")
     
     if requirement_id:
         requirement = requirements_collection.find_one({"id": requirement_id})
@@ -1256,7 +1336,11 @@ def chat_with_test_cases():
     # Add more direct instructions for modification requests
     if is_modification_request and direct_mode:
         context_parts.append("This is a modification request. You MUST return the COMPLETE updated test cases in a code block.")
-        context_parts.append("IMPORTANT: Respond ONLY with:\n1. The COMPLETE updated test cases in a code block\n2. Exactly: 'Modifications appliquées.'")
+        context_parts.append("IMPORTANT: Format your response as:")
+        context_parts.append("```testcases")
+        context_parts.append("[COMPLETE UPDATED TEST CASES HERE]")
+        context_parts.append("```")
+        context_parts.append("Modifications appliquées avec succès.")
     
     context = "\n\n".join(context_parts)
     
@@ -1287,12 +1371,23 @@ def chat_with_test_cases():
                 yield "data: [DONE]\n\n"
                 return
             
-            # Extract test cases from response if present
+            # Extract test cases from response if present - IMPROVED REGEX
             updated_test_cases = None
-            code_block_match = re.search(r'```(?:.*?)\n([\s\S]*?)\n```', full_response, re.MULTILINE)
-            if code_block_match:
-                updated_test_cases = code_block_match.group(1).strip()
-                print(f"Extracted updated test cases: {len(updated_test_cases)} characters")
+            
+            # Try multiple regex patterns to catch different code block formats
+            patterns = [
+                r'```testcases\n([\s\S]*?)\n```',
+                r'```\n([\s\S]*?)\n```',
+                r'```(?:.*?)\n([\s\S]*?)\n```'
+            ]
+            
+            for pattern in patterns:
+                code_block_match = re.search(pattern, full_response, re.MULTILINE | re.DOTALL)
+                if code_block_match:
+                    updated_test_cases = code_block_match.group(1).strip()
+                    print(f"Extracted updated test cases using pattern: {pattern}")
+                    print(f"Extracted content length: {len(updated_test_cases)} characters")
+                    break
             
             # If we successfully extracted updated test cases and have an active history ID
             if updated_test_cases and active_history_id and is_modification_request and direct_mode:
@@ -1312,14 +1407,14 @@ def chat_with_test_cases():
                     
                     if update_result.modified_count > 0:
                         print("Successfully updated history item")
-                        yield f"data: {json.dumps({'updated_test_cases': updated_test_cases, 'history_updated': True})}\n\n"
+                        yield f"data: {json.dumps({'updated_test_cases': updated_test_cases, 'history_updated': True, 'confirmation': 'Modifications appliquées avec succès.'})}\n\n"
                     else:
                         print("Failed to update history item - item not found or access denied")
-                        yield f"data: {json.dumps({'updated_test_cases': updated_test_cases, 'history_updated': False})}\n\n"
+                        yield f"data: {json.dumps({'updated_test_cases': updated_test_cases, 'history_updated': False, 'confirmation': 'Modifications appliquées avec succès.'})}\n\n"
                         
                 except Exception as update_error:
                     print(f"Error updating history: {update_error}")
-                    yield f"data: {json.dumps({'updated_test_cases': updated_test_cases, 'history_updated': False, 'update_error': str(update_error)})}\n\n"
+                    yield f"data: {json.dumps({'updated_test_cases': updated_test_cases, 'history_updated': False, 'update_error': str(update_error), 'confirmation': 'Modifications appliquées avec succès.'})}\n\n"
             
             yield f"data: {json.dumps({'complete': True, 'full_response': full_response})}\n\n"
             yield "data: [DONE]\n\n"
@@ -1335,7 +1430,6 @@ def chat_with_test_cases():
     return Response(generate(), content_type="text/event-stream", headers={
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive'
-        # REMOVED the duplicate CORS headers - let flask-cors handle it
     })
 
 # 4. ADD A NEW ENDPOINT TO CHECK GLOBAL API SERVICE:
@@ -1388,38 +1482,24 @@ def validate_gemini_api_key(api_key):
     except Exception as e:
         return False, f"Gemini API key validation failed: {str(e)}"
 def validate_api_key(api_key):
-    """Validate API key for both Claude and Gemini"""
+    """Validate API key for both Claude and Gemini with enhanced debugging"""
     if not api_key or not api_key.strip():
         return False, "API key is required"
     
-    api_key = api_key.strip()
+    clean_key = api_key.strip()
+    print(f"Validating API key starting with: {clean_key[:20]}...")
     
     try:
-        if is_gemini_api_key(api_key):
-            # Validate Gemini API key
-            if not configure_gemini_client(api_key):
-                return False, "Invalid Gemini API key"
-            
-            # Test with a simple request
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            response = model.generate_content("Hi")
-            
-            return True, "Gemini API key is valid"
+        if is_gemini_api_key(clean_key):
+            print("Detected Gemini API key format")
+            return validate_gemini_api_key(clean_key)
         else:
-            # Validate Claude API key (existing logic)
-            client = anthropic.Anthropic(api_key=api_key)
-            
-            response = client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=10,
-                messages=[{"role": "user", "content": "Hi"}]
-            )
-            
-            return True, "Claude API key is valid"
+            print("Detected Claude API key format")
+            return validate_claude_api_key(clean_key)
     
     except Exception as e:
-        service_name = "Gemini" if is_gemini_api_key(api_key) else "Claude"
-        return False, f"{service_name} API key validation failed: {str(e)}"
+        print(f"General API key validation error: {e}")
+        return False, f"API key validation failed: {str(e)}"
 @app.route("/extract_text", methods=["POST"])
 @login_required
 def extract_text():
@@ -1491,6 +1571,7 @@ def create_project():
         "user": username,
         "name": data.get("name"),
         "context": data.get("context", ""),
+        "language": data.get("language", "en"),  # Add this line
         "collaborators": [],
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by_role": "manager"
@@ -1542,26 +1623,43 @@ def update_project(project_id):
     username = session["user"]
     data = request.json
     
-    project = projects_collection.find_one({
-        "id": project_id,
-        "user": username
-    })
+    # Get user details to check role
+    user = users_collection.find_one({"username": username})
+    user_role = user.get("role", "user") if user else "user"
     
+    # Find the project
+    project = projects_collection.find_one({"id": project_id})
     if not project:
-        return jsonify({"error": "Project not found or you don't have permission"}), 404
+        return jsonify({"error": "Project not found"}), 404
     
+    # Check permissions: only owner or admin can edit
+    if project["user"] != username and user_role != "admin":
+        return jsonify({"error": "You don't have permission to edit this project"}), 403
+    
+    # Prepare update data
     update_data = {}
-    if "name" in data:
-        update_data["name"] = data["name"]
+    
+    # Update allowed fields
+    if "name" in data and data["name"].strip():
+        update_data["name"] = data["name"].strip()
+    
     if "context" in data:
         update_data["context"] = data["context"]
     
+    if "language" in data and data["language"] in ["en", "fr"]:
+        update_data["language"] = data["language"]
+    
+    # Add timestamp
     if update_data:
         update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        
+        # Update the project
         projects_collection.update_one(
             {"id": project_id},
             {"$set": update_data}
         )
+        
+        print(f"Project {project_id} updated by {username}: {update_data}")
     
     return jsonify({"message": "Project updated successfully"})
 
@@ -1762,49 +1860,69 @@ def delete_requirement(requirement_id):
 @login_required
 def get_collaborators(project_id):
     username = session["user"]
+    user = users_collection.find_one({"username": username})
+    user_role = user.get("role", "user") if user else "user"
     
-    project = projects_collection.find_one({
-        "id": project_id,
-        "$or": [
-            {"user": username},
-            {"collaborators": username}
-        ]
-    })
-    
+    # Check access - owners, collaborators, and admins can view
+    project = projects_collection.find_one({"id": project_id})
     if not project:
-        return jsonify({"error": "Project not found or access denied"}), 404
+        return jsonify({"error": "Project not found"}), 404
     
+    # Check permissions
+    if (project["user"] != username and 
+        username not in project.get("collaborators", []) and 
+        user_role != "admin"):
+        return jsonify({"error": "Access denied"}), 403
+    
+    # Get collaborators with enhanced details
     collaborators = list(collaborators_collection.find({"project_id": project_id}))
     
+    # Enhance with user details
     for collab in collaborators:
         collab["_id"] = str(collab["_id"])
+        
+        # Get user details if not already present
+        if not collab.get("username"):
+            user_details = users_collection.find_one({"email": collab["email"]})
+            if user_details:
+                collab["username"] = user_details["username"]
     
     return jsonify({"collaborators": collaborators})
 
+# Enhanced add collaborator endpoint with better error handling
 @app.route("/projects/<project_id>/collaborators", methods=["POST"])
 @login_required
 def add_collaborator(project_id):
     username = session["user"]
     data = request.json
-    email = data.get("email")
+    email = data.get("email", "").strip().lower()
     
     if not email:
         return jsonify({"error": "Email is required"}), 400
     
-    project = projects_collection.find_one({
-        "id": project_id,
-        "user": username
-    })
+    # Get user details to check role
+    user = users_collection.find_one({"username": username})
+    user_role = user.get("role", "user") if user else "user"
     
+    # Find the project
+    project = projects_collection.find_one({"id": project_id})
     if not project:
-        return jsonify({"error": "Project not found or you don't have permission"}), 404
+        return jsonify({"error": "Project not found"}), 404
+    
+    # Check permissions: only owner or admin can add collaborators
+    if project["user"] != username and user_role != "admin":
+        return jsonify({"error": "Only project owners and admins can add collaborators"}), 403
     
     # Check if user exists
     collaborator_user = users_collection.find_one({"email": email})
     if not collaborator_user:
-        return jsonify({"error": "User with this email not found"}), 404
+        return jsonify({"error": "No user found with this email address"}), 404
     
     collaborator_username = collaborator_user["username"]
+    
+    # Check if user is the owner
+    if email == user.get("email", "").lower():
+        return jsonify({"error": "Cannot add project owner as collaborator"}), 400
     
     # Check if already a collaborator
     existing_collab = collaborators_collection.find_one({
@@ -1813,7 +1931,7 @@ def add_collaborator(project_id):
     })
     
     if existing_collab:
-        return jsonify({"error": "User is already a collaborator"}), 400
+        return jsonify({"error": "User is already a collaborator on this project"}), 400
     
     # Add to collaborators collection
     collaborator = {
@@ -1824,7 +1942,7 @@ def add_collaborator(project_id):
         "added_at": datetime.now(timezone.utc).isoformat()
     }
     
-    collaborators_collection.insert_one(collaborator)
+    result = collaborators_collection.insert_one(collaborator)
     
     # Update project collaborators list
     projects_collection.update_one(
@@ -1832,29 +1950,44 @@ def add_collaborator(project_id):
         {"$addToSet": {"collaborators": collaborator_username}}
     )
     
-    return jsonify({"message": "Collaborator added successfully"})
+    # Return the created collaborator with its ID
+    collaborator["_id"] = str(result.inserted_id)
+    
+    print(f"Collaborator {email} added to project {project_id} by {username}")
+    
+    return jsonify({
+        "message": "Collaborator added successfully",
+        "collaborator": collaborator
+    })
 
+# Enhanced remove collaborator endpoint with better error handling
 @app.route("/collaborators/<collaborator_id>", methods=["DELETE"])
 @login_required
 def remove_collaborator(collaborator_id):
     username = session["user"]
+    
+    # Get user details to check role
+    user = users_collection.find_one({"username": username})
+    user_role = user.get("role", "user") if user else "user"
     
     try:
         object_id = ObjectId(collaborator_id)
     except:
         return jsonify({"error": "Invalid collaborator ID"}), 400
     
+    # Find the collaborator
     collaborator = collaborators_collection.find_one({"_id": object_id})
     if not collaborator:
         return jsonify({"error": "Collaborator not found"}), 404
     
-    project = projects_collection.find_one({
-        "id": collaborator["project_id"],
-        "user": username
-    })
-    
+    # Find the project
+    project = projects_collection.find_one({"id": collaborator["project_id"]})
     if not project:
-        return jsonify({"error": "Permission denied"}), 403
+        return jsonify({"error": "Project not found"}), 404
+    
+    # Check permissions: only owner or admin can remove collaborators
+    if project["user"] != username and user_role != "admin":
+        return jsonify({"error": "Only project owners and admins can remove collaborators"}), 403
     
     # Remove from collaborators collection
     collaborators_collection.delete_one({"_id": object_id})
@@ -1864,6 +1997,8 @@ def remove_collaborator(collaborator_id):
         {"id": collaborator["project_id"]},
         {"$pull": {"collaborators": collaborator["username"]}}
     )
+    
+    print(f"Collaborator {collaborator['email']} removed from project {collaborator['project_id']} by {username}")
     
     return jsonify({"message": "Collaborator removed successfully"})
 
@@ -2161,310 +2296,44 @@ def export_test_cases():
     
     else:
         return jsonify({"error": f"Unsupported format: {format_type}"}), 400
-def get_user_settings(username, project_id=None):
-    """Get user settings for LLM service preferences"""
-    try:
-        # Try to get project-specific settings first
-        if project_id:
-            project_settings = user_settings_collection.find_one({
-                "user": username,
-                "project_id": project_id
-            })
-            if project_settings:
-                return project_settings
-        
-        # Fallback to global user settings
-        global_settings = user_settings_collection.find_one({
-            "user": username,
-            "project_id": {"$exists": False}
-        })
-        
-        if global_settings:
-            return global_settings
-        
-        # Return default settings if none exist
-        return {
-        "user": username,
-        "llm_service": "auto",  # auto, claude, local_rag
-        "claude_api_key": None,  # No default API key
-        "use_project_key": False,
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc)
-        }
-    except Exception as e:
-        print(f"Error getting user settings: {e}")
-        return None
 
-def update_user_settings(username, settings_data, project_id=None):
-    """Update user settings for LLM service preferences"""
-    try:
-        # Prepare the filter
-        filter_query = {"user": username}
-        if project_id:
-            filter_query["project_id"] = project_id
-        else:
-            filter_query["project_id"] = {"$exists": False}
-        
-        # Prepare update data
-        update_data = {
-            "user": username,
-            "llm_service": settings_data.get("llm_service", "auto"),
-            "use_project_key": settings_data.get("use_project_key", False),
-            "updated_at": datetime.now(timezone.utc)
-        }
-        
-        # Add project_id if provided
-        if project_id:
-            update_data["project_id"] = project_id
-        
-        # Encrypt and store API key if provided
-        if settings_data.get("claude_api_key"):
-            encrypted_key = encrypt_api_key(settings_data["claude_api_key"])
-            if encrypted_key:
-                update_data["claude_api_key"] = encrypted_key
-        elif "claude_api_key" in settings_data and not settings_data["claude_api_key"]:
-            # Remove API key if explicitly set to empty
-            update_data["claude_api_key"] = None
-        
-        # Check if settings already exist
-        existing_settings = user_settings_collection.find_one(filter_query)
-        
-        if existing_settings:
-            # Update existing settings
-            update_data["created_at"] = existing_settings.get("created_at", datetime.now(timezone.utc))
-            user_settings_collection.update_one(
-                filter_query,
-                {"$set": update_data}
-            )
-        else:
-            # Create new settings
-            update_data["created_at"] = datetime.now(timezone.utc)
-            user_settings_collection.insert_one(update_data)
-        
-        return True
-        
-    except Exception as e:
-        print(f"Error updating user settings: {e}")
-        return False
+
+
 
 def get_effective_llm_service(username, project_id=None):
-    """Determine which LLM service to use - now based on project settings"""
+    """Determine which LLM service to use - ONLY based on project settings"""
     try:
         if project_id:
-            # Use project-level settings
+            # Use project-level settings ONLY
             return get_effective_llm_for_project(project_id)
         else:
-            # For requests without project context, fall back to local
-            return "local_rag" if check_rag_availability() else None
+            # No project context, default to local RAG if available
+            return "local" if check_rag_availability() else None
                 
     except Exception as e:
         print(f"Error determining effective LLM service: {e}")
-        return None
-
-def get_user_api_key_from_settings(username, project_id=None, settings=None):
-    """Get API key from user settings, supporting both Claude and Gemini"""
-    try:
-        if not settings:
-            settings = get_user_settings(username, project_id)
-        
-        if not settings:
-            return None
-        
-        # Return Gemini key if available, otherwise Claude key
-        return settings.get("gemini_api_key") or settings.get("claude_api_key")
-        
-    except Exception as e:
-        print(f"Error getting API key from settings: {e}")
-        return None
+        return "local" if check_rag_availability() else None
 
 
-@app.route("/user_settings", methods=["GET"])
-@login_required
-def get_user_settings_endpoint():
-    """Get user settings for LLM service preferences"""
-    username = session["user"]
-    project_id = request.args.get("project_id")
-    
-    try:
-        settings = get_user_settings(username, project_id)
-        if not settings:
-            return jsonify({"error": "Settings not found"}), 404
-        
-        # Remove sensitive data and prepare response
-        response_settings = {
-            "user": settings.get("user"),
-            "llm_service": settings.get("llm_service", "auto"),
-            "has_claude_api_key": bool(settings.get("claude_api_key")),
-            "use_project_key": settings.get("use_project_key", False),
-            "project_id": settings.get("project_id"),
-            "created_at": settings.get("created_at"),
-            "updated_at": settings.get("updated_at")
-        }
-        
-        # Add available services info
-        services_info = {
-            "claude_available": bool(get_user_api_key_from_settings(username, project_id, settings)),
-            "local_rag_available": check_rag_availability(),
-            "effective_service": get_effective_llm_service(username, project_id)
-        }
-        
-        return jsonify({
-            "settings": response_settings,
-            "services": services_info
-        })
-        
-    except Exception as e:
-        print(f"Error getting user settings: {e}")
-        return jsonify({"error": str(e)}), 500
 
-@app.route("/user_settings", methods=["POST", "PUT"])
-@login_required
-def update_user_settings(username, settings_data, project_id=None):
-    """Update user settings for LLM service preferences"""
-    try:
-        # Prepare the filter
-        filter_query = {"user": username}
-        if project_id:
-            filter_query["project_id"] = project_id
-        else:
-            filter_query["project_id"] = {"$exists": False}
-        
-        # Prepare update data
-        update_data = {
-            "user": username,
-            "llm_service": settings_data.get("llm_service", "auto"),
-            "use_project_key": settings_data.get("use_project_key", False),
-            "updated_at": datetime.now(timezone.utc)
-        }
-        
-        # Add project_id if provided
-        if project_id:
-            update_data["project_id"] = project_id
-        
-        # Store API key directly if provided (no encryption)
-        if settings_data.get("claude_api_key"):
-            update_data["claude_api_key"] = settings_data["claude_api_key"]  # CHANGED: No encryption
-        elif "claude_api_key" in settings_data and not settings_data["claude_api_key"]:
-            # Remove API key if explicitly set to empty
-            update_data["claude_api_key"] = None
-        
-        # Check if settings already exist
-        existing_settings = user_settings_collection.find_one(filter_query)
-        
-        if existing_settings:
-            # Update existing settings
-            update_data["created_at"] = existing_settings.get("created_at", datetime.now(timezone.utc))
-            user_settings_collection.update_one(
-                filter_query,
-                {"$set": update_data}
-            )
-        else:
-            # Create new settings
-            update_data["created_at"] = datetime.now(timezone.utc)
-            user_settings_collection.insert_one(update_data)
-        
-        return True
-        
-    except Exception as e:
-        print(f"Error updating user settings: {e}")
-        return False
 
-@app.route("/user_settings", methods=["DELETE"])
-@login_required
-def delete_user_settings_endpoint():
-    """Delete user settings (reset to defaults)"""
-    username = session["user"]
-    project_id = request.args.get("project_id")
-    
-    try:
-        # Prepare the filter
-        filter_query = {"user": username}
-        if project_id:
-            filter_query["project_id"] = project_id
-        else:
-            filter_query["project_id"] = {"$exists": False}
-        
-        # Delete settings
-        result = user_settings_collection.delete_one(filter_query)
-        
-        if result.deleted_count == 0:
-            return jsonify({"error": "Settings not found"}), 404
-        
-        return jsonify({"message": "Settings deleted successfully"})
-        
-    except Exception as e:
-        print(f"Error deleting user settings: {e}")
-        return jsonify({"error": str(e)}), 500
-    
-
-#app.add_url_rule("/generate_test_cases", "generate_test_cases_enhanced", generate_test_cases_endpoint_enhanced, methods=["POST", "OPTIONS"])
-
-# ==================================================
-# USER SETTINGS MIGRATION HELPER
-# ==================================================
-
-@app.route("/migrate_user_settings", methods=["POST"])
-@login_required
-def migrate_user_settings():
-    """Helper endpoint to migrate existing API keys to new settings system"""
-    username = session["user"]
-    
-    try:
-        # Check if user already has settings
-        existing_settings = user_settings_collection.find_one({
-            "user": username,
-            "project_id": {"$exists": False}
-        })
-        
-        if existing_settings:
-            return jsonify({"message": "Settings already migrated"})
-        
-        # Look for existing API keys
-        user_api_keys = list(api_keys_collection.find({"user": username}))
-        
-        migrated_count = 0
-        
-        for api_key_doc in user_api_keys:
-            project_id = api_key_doc.get("project_id")
-            
-            # Create settings entry
-            settings_data = {
-                "llm_service": "claude",  # Assume Claude since they had API keys
-                "claude_api_key": api_key_doc.get("api_key"),  # Already encrypted
-                "use_project_key": False
-            }
-            
-            success = update_user_settings(username, settings_data, project_id)
-            if success:
-                migrated_count += 1
-        
-        # Create default global settings if no API keys existed
-        if not user_api_keys:
-            default_settings = {
-                "llm_service": "auto",
-                "claude_api_key": None,
-                "use_project_key": False
-            }
-            update_user_settings(username, default_settings)
-            migrated_count = 1
-        
-        return jsonify({
-            "message": f"Migration completed. {migrated_count} settings entries created.",
-            "migrated_count": migrated_count
-        })
-        
-    except Exception as e:
-        print(f"Error migrating user settings: {e}")
-        return jsonify({"error": str(e)}), 500
-    
 def validate_claude_api_key(api_key):
-    """Validate Claude API key by making a test request"""
+    """Validate Claude API key by making a test request - FIXED VERSION"""
     if not api_key or not api_key.strip():
         return False, "API key is required"
     
     try:
+        # Clean the API key
+        clean_key = api_key.strip()
+        
+        print(f"Validating Claude API key: {clean_key[:20]}...")
+        
+        # FIXED: More flexible format check for Claude keys
+        if not (clean_key.startswith("sk-ant-") or clean_key.startswith("sk-")):
+            return False, "Invalid Claude API key format (should start with 'sk-ant-' or 'sk-')"
+        
         # Create client with the provided key
-        client = anthropic.Anthropic(api_key=api_key.strip())
+        client = anthropic.Anthropic(api_key=clean_key)
         
         # Make a minimal test request
         response = client.messages.create(
@@ -2473,16 +2342,22 @@ def validate_claude_api_key(api_key):
             messages=[{"role": "user", "content": "Hi"}]
         )
         
+        print("Claude API key validation successful")
         return True, "API key is valid"
     
-    except anthropic.AuthenticationError:
-        return False, "Invalid API key"
-    except anthropic.PermissionDeniedError:
+    except anthropic.AuthenticationError as e:
+        print(f"Claude authentication error: {e}")
+        return False, "Invalid API key or authentication failed"
+    except anthropic.PermissionDeniedError as e:
+        print(f"Claude permission error: {e}")
         return False, "API key doesn't have required permissions"
-    except anthropic.RateLimitError:
+    except anthropic.RateLimitError as e:
+        print(f"Claude rate limit error: {e}")
         return False, "Rate limit exceeded, but API key appears valid"
     except Exception as e:
+        print(f"Claude API key validation error: {e}")
         return False, f"API key validation failed: {str(e)}"
+
 
 def save_user_llm_settings(username, llm_choice, api_key=None, project_id=None):
     """Save user's LLM preference and API key for a specific project or globally"""
@@ -2602,168 +2477,62 @@ def get_effective_llm_for_user(username, project_id=None):
     except Exception as e:
         print(f"Error determining effective LLM service: {e}")
         return "local" if check_rag_availability() else None
-@app.route("/user_llm_settings", methods=["GET"])
-@login_required
-def get_user_llm_settings_endpoint():
-    """Get user's LLM settings"""
-    username = session["user"]
-    project_id = request.args.get("project_id")
-    
-    try:
-        settings = get_user_llm_settings(username, project_id)
-        
-        # Prepare response (don't expose encrypted API key)
-        response_data = {
-            "llm_service": settings.get("llm_service", "local") if settings else "local",
-            "has_claude_key": bool(settings and settings.get("claude_api_key")),
-            "api_key_validated": settings.get("api_key_validated", False) if settings else False,
-            "project_id": project_id,
-            "local_available": check_rag_availability(),
-            "effective_service": get_effective_llm_for_user(username, project_id)
-        }
-        
-        if settings:
-            response_data.update({
-                "created_at": settings.get("created_at"),
-                "updated_at": settings.get("updated_at"),
-                "api_key_validated_at": settings.get("api_key_validated_at")
-            })
-        
-        return jsonify(response_data)
-        
-    except Exception as e:
-        print(f"Error getting user LLM settings: {e}")
-        return jsonify({"error": str(e)}), 500
 
-@app.route("/user_llm_settings", methods=["POST"])
-@login_required
-def save_user_llm_settings_endpoint():
-    """Save user's LLM preference and API key"""
-    username = session["user"]
-    data = request.json
-    
-    llm_choice = data.get("llm_service")
-    api_key = data.get("claude_api_key", "").strip()
-    project_id = data.get("project_id")
-    
-    # Validate input
-    if llm_choice not in ["local", "claude"]:
-        return jsonify({"error": "llm_service must be 'local' or 'claude'"}), 400
-    
-    try:
-        success, message = save_user_llm_settings(username, llm_choice, api_key, project_id)
-        
-        if success:
-            # Get updated settings to return
-            updated_settings = get_user_llm_settings(username, project_id)
-            
-            response_data = {
-                "message": message,
-                "settings": {
-                    "llm_service": updated_settings.get("llm_service"),
-                    "has_claude_key": bool(updated_settings.get("claude_api_key")),
-                    "api_key_validated": updated_settings.get("api_key_validated", False),
-                    "project_id": project_id,
-                    "effective_service": get_effective_llm_for_user(username, project_id)
-                }
-            }
-            
-            return jsonify(response_data)
-        else:
-            return jsonify({"error": message}), 400
-            
-    except Exception as e:
-        print(f"Error saving user LLM settings: {e}")
-        return jsonify({"error": str(e)}), 500
 
-@app.route("/validate_claude_key", methods=["POST"])
-@login_required
-def validate_claude_key_endpoint():
-    """Validate Claude API key without saving"""
-    data = request.json
-    api_key = data.get("api_key", "").strip()
-    
-    if not api_key:
-        return jsonify({"error": "API key is required"}), 400
-    
-    try:
-        is_valid, message = validate_claude_api_key(api_key)
-        return jsonify({
-            "valid": is_valid,
-            "message": message
-        })
-    except Exception as e:
-        return jsonify({
-            "valid": False, 
-            "message": f"Validation error: {str(e)}"
-        }), 500
 
-@app.route("/user_llm_settings", methods=["DELETE"])
-@login_required 
-def delete_user_llm_settings_endpoint():
-    """Reset user's LLM settings to default"""
-    username = session["user"]
-    project_id = request.args.get("project_id")
-    
-    try:
-        filter_query = {"user": username}
-        if project_id:
-            filter_query["project_id"] = project_id
-        else:
-            filter_query["project_id"] = {"$exists": False}
-        
-        result = user_settings_collection.delete_one(filter_query)
-        
-        if result.deleted_count == 0:
-            return jsonify({"message": "No settings found to delete"})
-        
-        return jsonify({"message": "Settings reset to default successfully"})
-        
-    except Exception as e:
-        print(f"Error deleting user LLM settings: {e}")
-        return jsonify({"error": str(e)}), 500
+
 def save_project_llm_settings(project_id, manager_username, llm_choice, api_key=None):
-    """Save LLM settings at project level - only managers can do this"""
+    """Save LLM settings at project level - enhanced with debugging"""
     try:
+        print(f"Saving project LLM settings for project {project_id} by {manager_username}")
+        
         # Verify manager permissions
         user = users_collection.find_one({"username": manager_username})
         if not user or user.get("role") not in ["manager", "admin"]:
+            print(f"Access denied: User {manager_username} role is {user.get('role') if user else 'None'}")
             return False, "Only managers can configure project LLM settings"
         
         # Verify manager owns the project
         project = projects_collection.find_one({"id": project_id})
         if not project:
+            print(f"Project not found: {project_id}")
             return False, "Project not found"
         
         if user.get("role") != "admin" and project["user"] != manager_username:
+            print(f"Permission denied: Project owner is {project['user']}, requesting user is {manager_username}")
             return False, "You can only configure settings for projects you manage"
         
         # Prepare settings data
         settings_data = {
             "project_id": project_id,
             "manager": manager_username,
-            "llm_service": llm_choice,  # "local" or "claude"
+            "llm_service": llm_choice,
             "updated_at": datetime.now(timezone.utc)
         }
         
         # Handle API key validation for Claude
         if llm_choice == "claude":
             if not api_key:
+                print("No API key provided for Claude service")
                 return False, "API key is required for Claude"
             
+            print(f"Validating Claude API key for project {project_id}")
             # Validate API key
             is_valid, message = validate_claude_api_key(api_key)
             if not is_valid:
+                print(f"API key validation failed: {message}")
                 return False, f"API key validation failed: {message}"
             
-            settings_data["claude_api_key"] = api_key
+            settings_data["claude_api_key"] = api_key.strip()
             settings_data["api_key_validated"] = True
             settings_data["api_key_validated_at"] = datetime.now(timezone.utc)
+            print("API key validated and stored successfully")
             
         elif llm_choice == "local":
             # Remove API key if switching to local
             settings_data["claude_api_key"] = None
             settings_data["api_key_validated"] = False
+            print("Switched to local service, removed API key")
         
         # Check if settings already exist
         existing_settings = project_settings_collection.find_one({"project_id": project_id})
@@ -2775,17 +2544,20 @@ def save_project_llm_settings(project_id, manager_username, llm_choice, api_key=
                 {"project_id": project_id},
                 {"$set": settings_data}
             )
+            print("Updated existing project settings")
         else:
             # Create new settings
             settings_data["created_at"] = datetime.now(timezone.utc)
             project_settings_collection.insert_one(settings_data)
+            print("Created new project settings")
         
         return True, "Project LLM settings saved successfully"
         
     except Exception as e:
         print(f"Error saving project LLM settings: {e}")
+        import traceback
+        traceback.print_exc()
         return False, f"Error saving settings: {str(e)}"
-
 def get_project_llm_settings(project_id):
     """Get LLM settings for a specific project"""
     try:
@@ -2885,25 +2657,65 @@ def get_project_llm_settings_endpoint(project_id):
     except Exception as e:
         print(f"Error getting project LLM settings: {e}")
         return jsonify({"error": str(e)}), 500
+@app.route("/validate_claude_key", methods=["POST"])
+@login_required
+def validate_claude_key_endpoint():
+    """Endpoint to validate Claude API key - called by frontend"""
+    try:
+        data = request.json
+        api_key = data.get("api_key", "").strip()
+        
+        if not api_key:
+            return jsonify({"valid": False, "message": "API key is required"}), 400
+        
+        print(f"Validating Claude API key: {api_key[:20]}...")
+        
+        # Use the corrected validation function
+        is_valid, message = validate_claude_api_key(api_key)
+        
+        if is_valid:
+            print("Claude API key validation successful")
+            return jsonify({"valid": True, "message": message})
+        else:
+            print(f"Claude API key validation failed: {message}")
+            return jsonify({"valid": False, "message": message}), 400
+            
+    except Exception as e:
+        print(f"Error in validate_claude_key_endpoint: {e}")
+        return jsonify({"valid": False, "message": f"Validation error: {str(e)}"}), 500
 
 @app.route("/project_llm_settings/<project_id>", methods=["POST"])
 @login_required
 def save_project_llm_settings_endpoint(project_id):
-    """Save project's LLM settings - only managers can do this"""
+    """Save project's LLM settings - enhanced debugging"""
     username = session["user"]
     data = request.json
     
+    print(f"Received project LLM settings request for project {project_id} from user {username}")
+    print(f"Request data: {data}")
+    
     llm_choice = data.get("llm_service")
-    api_key = data.get("claude_api_key", "").strip()
+    # FIX: Get the API key from the correct field name
+    api_key = data.get("claude_api_key", "").strip() if data.get("claude_api_key") else None
+    
+    print(f"llm_choice: {llm_choice}")
+    print(f"api_key provided: {'Yes' if api_key else 'No'}")
+    print(f"api_key length: {len(api_key) if api_key else 0}")
     
     # Validate input
     if llm_choice not in ["local", "claude"]:
+        print(f"Invalid llm_service: {llm_choice}")
         return jsonify({"error": "llm_service must be 'local' or 'claude'"}), 400
+    
+    if llm_choice == "claude" and not api_key:
+        print("No API key provided for Claude service")
+        return jsonify({"error": "API key is required when selecting Claude"}), 400
     
     try:
         success, message = save_project_llm_settings(project_id, username, llm_choice, api_key)
         
         if success:
+            print(f"Successfully saved settings: {message}")
             # Get updated settings to return
             updated_settings = get_project_llm_settings(project_id)
             
@@ -2920,10 +2732,13 @@ def save_project_llm_settings_endpoint(project_id):
             
             return jsonify(response_data)
         else:
+            print(f"Failed to save settings: {message}")
             return jsonify({"error": message}), 400
             
     except Exception as e:
-        print(f"Error saving project LLM settings: {e}")
+        print(f"Error in save_project_llm_settings_endpoint: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 @app.route("/project_llm_settings/<project_id>", methods=["DELETE"])
 @login_required

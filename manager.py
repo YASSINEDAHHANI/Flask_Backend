@@ -357,6 +357,7 @@ def create_project_with_users():
     
     project_name = data.get("name")
     project_context = data.get("context", "")
+    project_language = data.get("language", "en")  
     assigned_users = data.get("assigned_users", [])  # List of usernames to assign as collaborators
     
     if not project_name:
@@ -376,6 +377,7 @@ def create_project_with_users():
             "user": current_user,
             "name": project_name,
             "context": project_context,
+            "language": project_language,  # Add this line
             "collaborators": assigned_users,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "created_by_role": "manager"
