@@ -39,8 +39,6 @@ import json
 from datetime import datetime, timezone
 import os
 from flask_cors import CORS, cross_origin
-import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 try:
     from local_rag_system import LocalRAGSystem
@@ -641,9 +639,9 @@ def generate_test_cases_claude(requirements, format_type, context, example_case,
         # NOW PASS 5 PARAMETERS INCLUDING LANGUAGE
         test_case_instruction = generate_test_case_prompt(requirements, format_type, context, example_case, project_language)
        
-        # Call Claude API
+        # Call Claude API - UPDATED MODEL NAME
         response = anthropic_client.messages.create(
-            model="claude-3-haiku-20240307",
+            model="claude-3-5-haiku-20241022",  # FIXED MODEL NAME
             max_tokens=2000,
             messages=[{"role": "user", "content": test_case_instruction}]
         )
@@ -664,7 +662,7 @@ def generate_test_cases_claude(requirements, format_type, context, example_case,
             "context": context,
             "example_case": example_case,
             "ai_service": "claude",
-            "language": project_language,  # Add this line
+            "language": project_language,
             "timestamp": datetime.now(timezone.utc),
             "used_project_settings": True
         }
@@ -677,8 +675,6 @@ def generate_test_cases_claude(requirements, format_type, context, example_case,
     except Exception as e:
         print(f"Claude API error: {e}")
         raise Exception(f"Claude API error: {str(e)}")
-
-# Find the remaining generate_test_cases_stream function around line 786 and UPDATE it to this:
 
 @app.route("/generate_test_cases_stream", methods=["POST"])
 @login_required
@@ -694,52 +690,92 @@ def generate_test_cases_stream():
     if not requirements:
         return jsonify({"error": "No requirements provided"}), 400
     
-    # Get project language - ADD THIS SECTION
-    project_language = "en"  # default
-    if project_id:
-        project = projects_collection.find_one({"id": project_id})
-        if project:
-            project_language = project.get('language', 'en')
+    if not project_id:
+        return jsonify({"error": "Project ID is required"}), 400
     
-    # NOW PASS 5 PARAMETERS INCLUDING LANGUAGE - UPDATE THIS LINE
+    # Get project language
+    project_language = "en"  # default
+    project = projects_collection.find_one({"id": project_id})
+    if project:
+        project_language = project.get('language', 'en')
+    
+    # Generate test case prompt
     test_case_instruction = generate_test_case_prompt(requirements, format_type, context, example_case, project_language)
     username = session["user"]
     
     def generate():
         try:
             full_response = ""
-            anthropic_client = get_anthropic_client(username, project_id)
             
-            with anthropic_client.messages.stream(
-                model="claude-3-haiku-20240307",
-                max_tokens=4000,
-                messages=[{"role": "user", "content": test_case_instruction}]
-            ) as stream:
-                for event in stream:
-                    if event.type == "content_block_delta":
-                        if event.delta.text:
-                            full_response += event.delta.text
-                            yield f"data: {json.dumps({'chunk': event.delta.text})}\n\n"
-                            
-            # Save to history after completion - ADD LANGUAGE TO HISTORY
-            history_data = {
+            # Use project-configured AI service - CLAUDE OR LOCAL ONLY
+            effective_service = get_effective_llm_for_project(project_id)
+            
+            if effective_service == "claude":
+                # Use Claude with project API key
+                api_key = get_project_api_key(project_id)
+                if not api_key:
+                    yield f"data: {json.dumps({'error': 'Claude API not configured for this project'})}\n\n"
+                    return
+                
+                client = anthropic.Anthropic(api_key=api_key)
+                with client.messages.stream(
+                    model="claude-3-5-sonnet-20241022",  # FIXED MODEL NAME
+                    max_tokens=4000,
+                    messages=[{"role": "user", "content": test_case_instruction}]
+                ) as stream:
+                    for text in stream.text_stream:
+                        full_response += text
+                        yield f"data: {text}\n\n"
+            
+            elif effective_service == "local":
+                # Use Local RAG - FIXED CONSTRUCTOR
+                if check_rag_availability():
+                    PDF_FOLDER = os.getenv("RAG_PDF_FOLDER", r"C:\Users\dahan\Documents\Stage PFE DXC cdg\llm_rag\rag\rag")
+                    rag = LocalRAGSystem(
+                        pdf_folder=PDF_FOLDER,
+                        persist_directory=os.getenv("RAG_PERSIST_DIR", "./chroma_db_local"),
+                        ollama_model="qwen3:8b"
+                    )
+                    response = rag.generate_test_cases(test_case_instruction)
+                    full_response = response
+                    yield f"data: {response}\n\n"
+                else:
+                    yield f"data: {json.dumps({'error': 'Local RAG system not available'})}\n\n"
+                    return
+            
+            else:
+                # No valid service configured
+                yield f"data: {json.dumps({'error': 'No AI service configured. Please contact your manager to configure Claude API or ensure Local RAG is available.'})}\n\n"
+                return
+            
+            # Save to history with project context
+            history_entry = {
                 "user": username,
-                "test_cases": full_response,
-                "timestamp": datetime.now(timezone.utc),
-                "requirements": requirements,
-                "context": context,
                 "project_id": project_id,
-                "language": project_language  # ADD THIS LINE
+                "requirements": requirements,
+                "test_cases": full_response,
+                "format_type": format_type,
+                "context": context,
+                "example_case": example_case,
+                "ai_service": effective_service,
+                "language": project_language,
+                "timestamp": datetime.now(timezone.utc),
+                "used_project_settings": True
             }
-            history_collection.insert_one(history_data)
             
-            yield f"data: {json.dumps({'complete': True})}\n\n"
+            if history_collection is not None:
+                history_collection.insert_one(history_entry)
+            
+            yield "data: [DONE]\n\n"
             
         except Exception as e:
-            print(f"Streaming error: {e}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            print(f"Error in test case generation: {e}")
+            yield f"data: {json.dumps({'error': f'Error generating test cases: {str(e)}'})}\n\n"
     
-    return Response(generate(), content_type="text/event-stream")
+    return Response(generate(), content_type="text/event-stream", headers={
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+    })
 
 # Replace the generate_test_cases_rag function with this:
 
@@ -1131,124 +1167,7 @@ def delete_history_item(history_id):
         return jsonify({"error": "History item not found"}), 404
     
     return jsonify({"message": "History item deleted successfully"})
-def is_gemini_api_key(api_key):
-    """Check if API key is for Gemini (starts with AIza)"""
-    return api_key and api_key.startswith("AIza")
 
-def configure_gemini_client(api_key):
-    """Configure Gemini client with API key"""
-    try:
-        genai.configure(api_key=api_key)
-        return True
-    except Exception as e:
-        print(f"Error configuring Gemini: {e}")
-        return False
-
-def chat_with_gemini_stream(messages, api_key, model_name="gemini-1.5-flash"):
-    """
-    Send chat to Gemini API and yield streaming responses
-    """
-    try:
-        # Configure Gemini
-        if not configure_gemini_client(api_key):
-            raise Exception("Failed to configure Gemini client")
-        
-        # Initialize model
-        model = genai.GenerativeModel(model_name)
-        
-        # Convert messages to Gemini format - take the last message content
-        if messages and len(messages) > 0:
-            prompt = messages[-1]["content"]
-        else:
-            raise Exception("No messages provided")
-        
-        # Configure safety settings (more permissive for test case generation)
-        safety_settings = {
-            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-        }
-        
-        # Generate streaming response
-        response = model.generate_content(
-            prompt,
-            safety_settings=safety_settings,
-            stream=True
-        )
-        
-        # Yield chunks as they come
-        for chunk in response:
-            if chunk.text:
-                yield chunk.text
-                
-    except Exception as e:
-        print(f"Error in Gemini chat: {e}")
-        yield f"Error communicating with Gemini: {str(e)}"
-def get_global_api_key():
-    """Get the global API key from environment variables"""
-    # Try Gemini first, then Claude
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    claude_key = os.getenv("CLAUDE_API_KEY")
-    
-    return gemini_key or claude_key
-
-def is_gemini_api_key(api_key):
-    """Check if API key is for Gemini (starts with AIza)"""
-    return api_key and api_key.startswith("AIza")
-
-def configure_gemini_client(api_key):
-    """Configure Gemini client with API key"""
-    try:
-        genai.configure(api_key=api_key)
-        return True
-    except Exception as e:
-        print(f"Error configuring Gemini: {e}")
-        return False
-
-def chat_with_gemini_stream(messages, api_key, model_name="gemini-1.5-flash"):
-    """
-    Send chat to Gemini API and yield streaming responses
-    """
-    try:
-        # Configure Gemini
-        if not configure_gemini_client(api_key):
-            raise Exception("Failed to configure Gemini client")
-        
-        # Initialize model
-        model = genai.GenerativeModel(model_name)
-        
-        # Convert messages to Gemini format - take the last message content
-        if messages and len(messages) > 0:
-            prompt = messages[-1]["content"]
-        else:
-            raise Exception("No messages provided")
-        
-        # Configure safety settings (more permissive for test case generation)
-        safety_settings = {
-            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-        }
-        
-        # Generate streaming response
-        response = model.generate_content(
-            prompt,
-            safety_settings=safety_settings,
-            stream=True
-        )
-        
-        # Yield chunks as they come
-        for chunk in response:
-            if chunk.text:
-                yield chunk.text
-                
-    except Exception as e:
-        print(f"Error in Gemini chat: {e}")
-        yield f"Error communicating with Gemini: {str(e)}"
-
-# Replace the chat_with_test_cases function in app.py with this fixed version:
 
 @app.route("/chat_with_assistant", methods=["POST"])
 @login_required
@@ -1269,23 +1188,30 @@ def chat_with_test_cases():
     print(f"Message: {user_message[:100]}..." if len(user_message) > 100 else f"Message: {user_message}")
     print(f"Direct mode: {direct_mode}, Active history ID: {active_history_id}")
     
-    # Get Gemini API key from environment
-    gemini_api_key = os.getenv("GEMINI_API_KEY")
-    if not gemini_api_key:
-        error_msg = "No Gemini API key configured in environment variables"
+    # *** REQUIRE PROJECT ID ***
+    if not project_id:
+        error_msg = "Project ID is required for AI chat assistant"
         print(f"ERROR: {error_msg}")
         return Response(
             f"data: {json.dumps({'error': error_msg})}\n\n", 
             content_type="text/event-stream",
-            headers={
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive'
-            }
+            headers={'Cache-Control': 'no-cache', 'Connection': 'keep-alive'}
         )
     
-    print(f"Using Gemini API for chat")
+    # Get the effective LLM service for this project (Claude or Local only)
+    effective_service = get_effective_llm_for_project(project_id)
+    print(f"Using {effective_service} service for project {project_id}")
     
-    # Create context for the AI
+    if not effective_service:
+        error_msg = "No AI service configured for this project. Please contact your manager to configure Claude API or ensure Local RAG is available."
+        print(f"ERROR: {error_msg}")
+        return Response(
+            f"data: {json.dumps({'error': error_msg})}\n\n", 
+            content_type="text/event-stream",
+            headers={'Cache-Control': 'no-cache', 'Connection': 'keep-alive'}
+        )
+    
+    # Create context for the AI based on mode
     if direct_mode:
         context_parts = [
             "You are a test case assistant. Your primary job is to directly modify test cases based on user requests.",
@@ -1298,129 +1224,170 @@ def chat_with_test_cases():
         ]
     else:
         context_parts = [
-            "You are a test case assistant helping to improve test cases.",
-            "When suggesting changes, explain your reasoning clearly."
+            "You are a helpful test case assistant. You can help users understand, analyze, and modify test cases.",
+            "You should be conversational and helpful while maintaining accuracy."
         ]
     
-    if project_id:
-        project = projects_collection.find_one({
-            "id": project_id,
-            "$or": [
-                {"user": username},
-                {"collaborators": username}
-            ]
-        })
-        
-        if project:
-            project_language = project.get('language', 'en')
-            context_parts.append(f"Project Context: {project.get('name', '')} - {project.get('context', '')}")
-            
-            # Add language-specific instructions
-            if project_language == 'fr':
-                context_parts.append("Veuillez répondre en français.")
-            else:
-                context_parts.append("Please respond in English.")
+    if test_cases:
+        context_parts.append(f"\nCurrent test cases:\n{test_cases}")
     
-    if requirement_id:
-        requirement = requirements_collection.find_one({"id": requirement_id})
-        if requirement:
-            context_parts.append(f"Requirement: {requirement.get('title', '')}\n{requirement.get('description', '')}")
+    context = "\n".join(context_parts)
     
-    context_parts.append(f"Current test cases:\n```\n{test_cases}\n```")
-    context_parts.append(f"User request: {user_message}")
+    # Prepare messages for the AI
+    messages = []
     
-    # Detect if the user is asking for modifications
-    modification_keywords = ["update", "change", "modify", "edit", "replace", "fix", "correct", "add", "remove", "delete", "ajouter", "modifier", "changer", "supprimer", "corriger"]
-    is_modification_request = any(keyword in user_message.lower() for keyword in modification_keywords)
+    # Add system context
+    messages.append({"role": "system", "content": context})
     
-    # Add more direct instructions for modification requests
-    if is_modification_request and direct_mode:
-        context_parts.append("This is a modification request. You MUST return the COMPLETE updated test cases in a code block.")
-        context_parts.append("IMPORTANT: Format your response as:")
-        context_parts.append("```testcases")
-        context_parts.append("[COMPLETE UPDATED TEST CASES HERE]")
-        context_parts.append("```")
-        context_parts.append("Modifications appliquées avec succès.")
+    # Add chat history (limit to last 10 messages to avoid token limits)
+    recent_history = chat_history[-10:] if len(chat_history) > 10 else chat_history
+    for msg in recent_history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
     
-    context = "\n\n".join(context_parts)
+    # Add current user message
+    messages.append({"role": "user", "content": user_message})
     
     def generate():
         try:
             full_response = ""
-            print(f"Starting Gemini stream processing...")
+            updated_test_cases = None
             
-            # Prepare messages
-            messages = [{"role": "user", "content": context}]
+            # *** ONLY CLAUDE OR LOCAL RAG - NO GEMINI ***
+            if effective_service == "claude":
+                # Use Claude API
+                api_key = get_project_api_key(project_id)
+                if not api_key:
+                    yield f"data: {json.dumps({'error': 'Claude API key not configured for this project. Please contact your manager to configure it.'})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+                
+                print(f"Using Claude API for chat")
+                
+                try:
+                    client = anthropic.Anthropic(api_key=api_key)
+                    
+                    # Convert messages to Claude format (system message separate)
+                    system_message = None
+                    claude_messages = []
+                    
+                    for msg in messages:
+                        if msg["role"] == "system":
+                            system_message = msg["content"]
+                        else:
+                            claude_messages.append(msg)
+                    
+                    # Create Claude streaming request
+                    with client.messages.stream(
+                        model="claude-3-5-sonnet-20241022",  # FIXED MODEL NAME
+                        max_tokens=4000,
+                        system=system_message,
+                        messages=claude_messages
+                    ) as stream:
+                        for text in stream.text_stream:
+                            full_response += text
+                            yield f"data: {json.dumps({'message': text})}\n\n"
+                            
+                except Exception as claude_error:
+                    print(f"Claude API error: {claude_error}")
+                    yield f"data: {json.dumps({'error': f'Claude API error: {str(claude_error)}'})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+                    
+            elif effective_service == "local":
+                # Use Local RAG System - FIXED CONSTRUCTOR
+                try:
+                    print(f"Using Local RAG for chat")
+                    
+                    if not check_rag_availability():
+                        yield f"data: {json.dumps({'error': 'Local RAG system is not available. Please contact your manager to configure Claude API.'})}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+                    
+                    # Use the local RAG system for chat - FIXED
+                    PDF_FOLDER = os.getenv("RAG_PDF_FOLDER", r"C:\Users\dahan\Documents\Stage PFE DXC cdg\llm_rag\rag\rag")
+                    rag = LocalRAGSystem(
+                        pdf_folder=PDF_FOLDER,
+                        persist_directory=os.getenv("RAG_PERSIST_DIR", "./chroma_db_local"),
+                        ollama_model="qwen3:8b"
+                    )
+                    
+                    # For direct mode test case modifications, use generate_test_cases
+                    if direct_mode and test_cases and any(keyword in user_message.lower() 
+                        for keyword in ['modify', 'change', 'update', 'add', 'remove', 'edit']):
+                        
+                        # Generate modified test cases using local RAG
+                        context_prompt = f"""
+                        Current test cases:
+                        {test_cases}
+                        
+                        User request: {user_message}
+                        
+                        Please modify the test cases according to the user's request and return the COMPLETE updated test cases.
+                        """
+                        
+                        response = rag.generate_test_cases(context_prompt)
+                        full_response = response
+                        updated_test_cases = response
+                        
+                        yield f"data: {json.dumps({'message': response})}\n\n"
+                    else:
+                        # Regular chat using local RAG
+                        response = rag.query(user_message)
+                        full_response = response
+                        
+                        yield f"data: {json.dumps({'message': response})}\n\n"
+                        
+                except Exception as rag_error:
+                    print(f"Local RAG error: {rag_error}")
+                    yield f"data: {json.dumps({'error': f'Local RAG error: {str(rag_error)}'})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
             
-            try:
-                # Use Gemini API only
-                response_generator = chat_with_gemini_stream(messages, gemini_api_key)
-                
-                # Stream the response
-                for chunk in response_generator:
-                    if chunk:
-                        full_response += chunk
-                        yield f"data: {json.dumps({'chunk': chunk})}\n\n"
-                
-                print(f"Gemini stream completed successfully")
-                
-            except Exception as stream_error:
-                error_msg = f"Error during Gemini streaming: {str(stream_error)}"
-                print(f"ERROR: {error_msg}")
+            else:
+                # No valid service configured
+                error_msg = "No valid AI service configured. Please contact your manager to configure Claude API or ensure Local RAG is available."
                 yield f"data: {json.dumps({'error': error_msg})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
             
-            # Extract test cases from response if present - IMPROVED REGEX
-            updated_test_cases = None
-            
-            # Try multiple regex patterns to catch different code block formats
-            patterns = [
-                r'```testcases\n([\s\S]*?)\n```',
-                r'```\n([\s\S]*?)\n```',
-                r'```(?:.*?)\n([\s\S]*?)\n```'
-            ]
-            
-            for pattern in patterns:
-                code_block_match = re.search(pattern, full_response, re.MULTILINE | re.DOTALL)
-                if code_block_match:
-                    updated_test_cases = code_block_match.group(1).strip()
-                    print(f"Extracted updated test cases using pattern: {pattern}")
-                    print(f"Extracted content length: {len(updated_test_cases)} characters")
-                    break
-            
-            # If we successfully extracted updated test cases and have an active history ID
-            if updated_test_cases and active_history_id and is_modification_request and direct_mode:
-                try:
-                    print(f"Attempting to update history item: {active_history_id}")
-                    object_id = ObjectId(active_history_id)
-                    
-                    # Update the history item with the new test cases
-                    update_result = history_collection.update_one(
-                        {"_id": object_id, "user": username},
-                        {"$set": {
-                            "test_cases": updated_test_cases,
-                            "timestamp": datetime.now(timezone.utc),
-                            "update_type": "ai_modification"
-                        }}
-                    )
-                    
-                    if update_result.modified_count > 0:
-                        print("Successfully updated history item")
-                        yield f"data: {json.dumps({'updated_test_cases': updated_test_cases, 'history_updated': True, 'confirmation': 'Modifications appliquées avec succès.'})}\n\n"
-                    else:
-                        print("Failed to update history item - item not found or access denied")
-                        yield f"data: {json.dumps({'updated_test_cases': updated_test_cases, 'history_updated': False, 'confirmation': 'Modifications appliquées avec succès.'})}\n\n"
+            # *** POST-PROCESSING FOR TEST CASE UPDATES ***
+            if direct_mode and full_response:
+                # Extract test cases from response if they're in a code block
+                import re
+                test_case_pattern = r'```(?:testcases?)?\s*(.*?)\s*```'
+                matches = re.findall(test_case_pattern, full_response, re.DOTALL | re.IGNORECASE)
+                
+                if matches:
+                    # Use the last match as the updated test cases
+                    updated_test_cases = matches[-1].strip()
+                    print(f"Extracted updated test cases: {len(updated_test_cases)} characters")
+                
+                # If we found updated test cases, save to history
+                if updated_test_cases and active_history_id:
+                    try:
+                        object_id = ObjectId(active_history_id)
+                        current_time = datetime.now(timezone.utc)
                         
-                except Exception as update_error:
-                    print(f"Error updating history: {update_error}")
-                    yield f"data: {json.dumps({'updated_test_cases': updated_test_cases, 'history_updated': False, 'update_error': str(update_error), 'confirmation': 'Modifications appliquées avec succès.'})}\n\n"
+                        history_collection.update_one(
+                            {"_id": object_id},
+                            {"$set": {
+                                "test_cases": updated_test_cases,
+                                "updated_at": current_time,
+                                "ai_service": effective_service  # Track which service was used
+                            }}
+                        )
+                        
+                        yield f"data: {json.dumps({'updated_test_cases': updated_test_cases, 'history_updated': True, 'confirmation': 'Modifications appliquées avec succès.'})}\n\n"
+                        
+                    except Exception as update_error:
+                        print(f"Error updating history: {update_error}")
+                        yield f"data: {json.dumps({'updated_test_cases': updated_test_cases, 'history_updated': False, 'update_error': str(update_error), 'confirmation': 'Modifications appliquées avec succès.'})}\n\n"
             
-            yield f"data: {json.dumps({'complete': True, 'full_response': full_response})}\n\n"
+            yield f"data: {json.dumps({'complete': True, 'full_response': full_response, 'service_used': effective_service})}\n\n"
             yield "data: [DONE]\n\n"
             
         except Exception as e:
-            error_msg = f"Unexpected error in Gemini chat processing: {str(e)}"
+            error_msg = f"Unexpected error in AI chat processing: {str(e)}"
             print(f"ERROR: {error_msg}")
             import traceback
             traceback.print_exc()
@@ -1432,74 +1399,11 @@ def chat_with_test_cases():
         'Connection': 'keep-alive'
     })
 
+
 # 4. ADD A NEW ENDPOINT TO CHECK GLOBAL API SERVICE:
 
-@app.route("/check_global_api_service", methods=["GET"])
-@login_required
-def check_global_api_service():
-    """Check if Gemini API service is configured"""
-    try:
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
-        
-        if not gemini_api_key:
-            return jsonify({
-                "configured": False,
-                "service": None,
-                "message": "No Gemini API key configured"
-            })
-        
-        return jsonify({
-            "configured": True,
-            "service": "gemini",
-            "service_name": "Gemini AI",
-            "message": "Gemini API configured"
-        })
-        
-    except Exception as e:
-        print(f"Error checking Gemini API service: {e}")
-        return jsonify({"error": str(e)}), 500
-def validate_gemini_api_key(api_key):
-    """Validate Gemini API key"""
-    if not api_key or not api_key.strip():
-        return False, "API key is required"
-    
-    api_key = api_key.strip()
-    
-    if not api_key.startswith("AIza"):
-        return False, "Invalid Gemini API key format (should start with 'AIza')"
-    
-    try:
-        # Configure Gemini
-        if not configure_gemini_client(api_key):
-            return False, "Invalid Gemini API key"
-        
-        # Test with a simple request
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content("Hi")
-        
-        return True, "Gemini API key is valid"
-    
-    except Exception as e:
-        return False, f"Gemini API key validation failed: {str(e)}"
-def validate_api_key(api_key):
-    """Validate API key for both Claude and Gemini with enhanced debugging"""
-    if not api_key or not api_key.strip():
-        return False, "API key is required"
-    
-    clean_key = api_key.strip()
-    print(f"Validating API key starting with: {clean_key[:20]}...")
-    
-    try:
-        if is_gemini_api_key(clean_key):
-            print("Detected Gemini API key format")
-            return validate_gemini_api_key(clean_key)
-        else:
-            print("Detected Claude API key format")
-            return validate_claude_api_key(clean_key)
-    
-    except Exception as e:
-        print(f"General API key validation error: {e}")
-        return False, f"API key validation failed: {str(e)}"
+
+
 @app.route("/extract_text", methods=["POST"])
 @login_required
 def extract_text():
@@ -2318,24 +2222,19 @@ def get_effective_llm_service(username, project_id=None):
 
 
 def validate_claude_api_key(api_key):
-    """Validate Claude API key by making a test request - FIXED VERSION"""
+    """Validate Claude API key by making a test request"""
     if not api_key or not api_key.strip():
         return False, "API key is required"
     
     try:
-        # Clean the API key
         clean_key = api_key.strip()
-        
         print(f"Validating Claude API key: {clean_key[:20]}...")
         
-        # FIXED: More flexible format check for Claude keys
         if not (clean_key.startswith("sk-ant-") or clean_key.startswith("sk-")):
             return False, "Invalid Claude API key format (should start with 'sk-ant-' or 'sk-')"
         
-        # Create client with the provided key
         client = anthropic.Anthropic(api_key=clean_key)
         
-        # Make a minimal test request
         response = client.messages.create(
             model="claude-3-haiku-20240307",
             max_tokens=10,
@@ -2360,65 +2259,48 @@ def validate_claude_api_key(api_key):
 
 
 def save_user_llm_settings(username, llm_choice, api_key=None, project_id=None):
-    """Save user's LLM preference and API key for a specific project or globally"""
+    """Save user's LLM preference and API key - CLAUDE AND LOCAL ONLY"""
     try:
-        # Prepare the filter for finding existing settings
         filter_query = {"user": username}
         if project_id:
             filter_query["project_id"] = project_id
         else:
             filter_query["project_id"] = {"$exists": False}
         
-        # Prepare the data to save
         settings_data = {
             "user": username,
-            "llm_service": llm_choice,  # "local", "claude", or "gemini"
+            "llm_service": llm_choice,  # "local" or "claude" only
             "updated_at": datetime.now(timezone.utc)
         }
         
-        # Add project_id if provided
         if project_id:
             settings_data["project_id"] = project_id
         
-        # Handle API key
-        if llm_choice in ["claude", "gemini"]:
+        # Handle API key for Claude only
+        if llm_choice == "claude":
             if not api_key:
-                return False, "API key is required for Claude/Gemini"
+                return False, "API key is required for Claude"
             
-            # Validate API key (now works for both Claude and Gemini)
-            is_valid, message = validate_api_key(api_key)
+            is_valid, message = validate_claude_api_key(api_key)
             if not is_valid:
                 return False, f"API key validation failed: {message}"
             
-            # Store API key directly (no encryption)
-            if is_gemini_api_key(api_key):
-                settings_data["gemini_api_key"] = api_key
-                settings_data["claude_api_key"] = None
-            else:
-                settings_data["claude_api_key"] = api_key
-                settings_data["gemini_api_key"] = None
-                
+            settings_data["claude_api_key"] = api_key
             settings_data["api_key_validated"] = True
             settings_data["api_key_validated_at"] = datetime.now(timezone.utc)
             
         elif llm_choice == "local":
-            # Remove API keys if switching to local
             settings_data["claude_api_key"] = None
-            settings_data["gemini_api_key"] = None
             settings_data["api_key_validated"] = False
+        else:
+            return False, f"Invalid LLM choice: {llm_choice}. Only 'claude' and 'local' are supported."
         
-        # Check if settings already exist
         existing_settings = user_settings_collection.find_one(filter_query)
         
         if existing_settings:
-            # Update existing settings
             settings_data["created_at"] = existing_settings.get("created_at", datetime.now(timezone.utc))
-            user_settings_collection.update_one(
-                filter_query,
-                {"$set": settings_data}
-            )
+            user_settings_collection.update_one(filter_query, {"$set": settings_data})
         else:
-            # Create new settings
             settings_data["created_at"] = datetime.now(timezone.utc)
             user_settings_collection.insert_one(settings_data)
         
@@ -2453,25 +2335,21 @@ def get_user_llm_settings(username, project_id=None):
         return None
 
 def get_effective_llm_for_user(username, project_id=None):
-    """Determine which LLM service the user should use"""
+    """Determine which LLM service the user should use - CLAUDE OR LOCAL ONLY"""
     try:
         settings = get_user_llm_settings(username, project_id)
         
         if not settings:
-            # No settings found, default to local if available
             return "local" if check_rag_availability() else None
         
         llm_service = settings.get("llm_service", "local")
         
         if llm_service == "claude":
-            # Check if API key is available and validated
             if settings.get("claude_api_key") and settings.get("api_key_validated"):
                 return "claude"
             else:
-                # API key not available or not validated, fallback to local
                 return "local" if check_rag_availability() else None
         else:
-            # User chose local
             return "local" if check_rag_availability() else None
             
     except Exception as e:
@@ -2567,7 +2445,7 @@ def get_project_llm_settings(project_id):
         return None
 
 def get_effective_llm_for_project(project_id):
-    """Determine which LLM service should be used for a project"""
+    """Determine which LLM service should be used for a project - CLAUDE OR LOCAL ONLY"""
     try:
         settings = get_project_llm_settings(project_id)
         
@@ -2591,7 +2469,6 @@ def get_effective_llm_for_project(project_id):
     except Exception as e:
         print(f"Error determining effective LLM service for project: {e}")
         return "local" if check_rag_availability() else None
-
 def get_project_api_key(project_id):
     """Get the API key for a project"""
     try:
@@ -2602,6 +2479,69 @@ def get_project_api_key(project_id):
     except Exception as e:
         print(f"Error getting project API key: {e}")
         return None
+@app.route("/check_api_service", methods=["GET"])
+@login_required
+def check_api_service():
+    """Check which AI service is configured for the current context - CLAUDE OR LOCAL ONLY"""
+    try:
+        project_id = request.args.get("project_id")
+        
+        if project_id:
+            # Check project-level configuration
+            effective_service = get_effective_llm_for_project(project_id)
+            
+            if effective_service == "claude":
+                return jsonify({
+                    "configured": True,
+                    "service": "claude",
+                    "service_name": "Claude AI",
+                    "message": "Using Claude AI for this project",
+                    "project_configured": True
+                })
+            elif effective_service == "local":
+                return jsonify({
+                    "configured": True,
+                    "service": "local",
+                    "service_name": "Local RAG",
+                    "message": "Using Local RAG for this project", 
+                    "project_configured": True,
+                    "rag_available": check_rag_availability()
+                })
+            else:
+                return jsonify({
+                    "configured": False,
+                    "service": None,
+                    "message": "No AI service configured for this project. Please configure Claude API or ensure Local RAG is available.",
+                    "project_configured": False
+                })
+        else:
+            # No project context - require project configuration
+            return jsonify({
+                "configured": False,
+                "service": None,
+                "message": "Project ID required for AI service configuration"
+            })
+        
+    except Exception as e:
+        print(f"Error checking API service: {e}")
+        return jsonify({"error": str(e)}), 500
+    
+@app.route("/check_global_api_service", methods=["GET"])
+@login_required
+def check_global_api_service():
+    """Check if any global API service is configured (for fallback)"""
+    try:
+        # Since you're only using project-level settings now, 
+        # this endpoint can just return local RAG availability
+        return jsonify({
+            "configured": check_rag_availability(),
+            "service": "local" if check_rag_availability() else None,
+            "service_name": "Local RAG" if check_rag_availability() else None
+        })
+        
+    except Exception as e:
+        print(f"Error checking global API service: {e}")
+        return jsonify({"error": str(e)}), 500
 @app.route("/project_llm_settings/<project_id>", methods=["GET"])
 @login_required
 def get_project_llm_settings_endpoint(project_id):
