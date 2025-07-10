@@ -12,6 +12,14 @@ projects_collection = None
 collaborators_collection = None
 api_keys_collection = None
 
+def init_admin_collections(app_users, app_projects, app_collaborators, app_api_keys=None):
+    """Initialize collections for admin blueprint"""
+    global users_collection, projects_collection, collaborators_collection, api_keys_collection
+    users_collection = app_users
+    projects_collection = app_projects
+    collaborators_collection = app_collaborators
+    api_keys_collection = app_api_keys
+
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -201,36 +209,65 @@ def delete_user(user_id):
 @admin_bp.route("/projects", methods=["GET"])
 @admin_required
 def get_all_projects():
-    """Get all projects with enhanced details"""
+    """Get all projects for admin panel"""
     try:
+        # Check if collections are initialized
+        if projects_collection is None or collaborators_collection is None:
+            return jsonify({"error": "Database collections not properly initialized"}), 500
+        
+        # Get all projects
         projects = list(projects_collection.find({}))
         
-        # Convert ObjectId to string and add additional details
+        # Convert ObjectId to string and add additional info
         for project in projects:
             project["_id"] = str(project["_id"])
             
-            # Add collaborator count
-            collab_count = collaborators_collection.count_documents({"project_id": project["id"]})
-            project["collaborator_count"] = collab_count
-            
-            # Get requirements count
+            # Get collaborator count safely
             try:
-                from app import requirements_collection
-                req_count = requirements_collection.count_documents({"project_id": project["id"]})
-                project["requirements_count"] = req_count
-            except (ImportError, NameError):
+                collab_count = collaborators_collection.count_documents({"project_id": project["id"]})
+                project["collaborator_count"] = collab_count
+            except Exception:
+                project["collaborator_count"] = 0
+            
+            # Get requirements count safely
+            try:
+                # Import requirements collection from main app
+                import sys
+                if 'app' in sys.modules:
+                    app_module = sys.modules['app']
+                    if hasattr(app_module, 'requirements_collection'):
+                        requirements_collection = app_module.requirements_collection
+                        req_count = requirements_collection.count_documents({"project_id": project["id"]})
+                        project["requirements_count"] = req_count
+                    else:
+                        project["requirements_count"] = 0
+                else:
+                    project["requirements_count"] = 0
+            except Exception:
                 project["requirements_count"] = 0
+            
+            # Get collaborator details safely
+            try:
+                collaborators = list(collaborators_collection.find({"project_id": project["id"]}))
+                for collab in collaborators:
+                    collab["_id"] = str(collab["_id"])
+                project["collaborator_details"] = collaborators
+            except Exception:
+                project["collaborator_details"] = []
         
         return jsonify({"projects": projects})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 @admin_bp.route("/projects/<project_id>", methods=["GET"])
 @admin_required
 def get_project(project_id):
     """Get a specific project with detailed information including requirements"""
     try:
+        # Check if collections are initialized
+        if projects_collection is None:
+            return jsonify({"error": "Projects collection not properly initialized"}), 500
+            
         # Find the project
         project = projects_collection.find_one({"id": project_id})
         if not project:
@@ -239,40 +276,54 @@ def get_project(project_id):
         project["_id"] = str(project["_id"])
         
         # Get project collaborators with detailed info
-        collaborators = list(collaborators_collection.find({"project_id": project_id}))
-        for collab in collaborators:
-            collab["_id"] = str(collab["_id"])
-            
-        # Add collaborators to project
-        project["collaborator_details"] = collaborators
-        
-        # Get project requirements (if requirements_collection exists)
         try:
-            # Import the requirements collection from the main app
-            from app import requirements_collection
-            requirements = list(requirements_collection.find({"project_id": project_id}))
-            for req in requirements:
-                req["_id"] = str(req["_id"])
-            project["requirements"] = requirements
-        except (ImportError, NameError):
-            # If requirements_collection is not available, set empty list
+            collaborators = list(collaborators_collection.find({"project_id": project_id}))
+            for collab in collaborators:
+                collab["_id"] = str(collab["_id"])
+            project["collaborator_details"] = collaborators
+        except Exception:
+            project["collaborator_details"] = []
+        
+        # Get project requirements safely
+        try:
+            import sys
+            if 'app' in sys.modules:
+                app_module = sys.modules['app']
+                if hasattr(app_module, 'requirements_collection'):
+                    requirements_collection = app_module.requirements_collection
+                    requirements = list(requirements_collection.find({"project_id": project_id}))
+                    for req in requirements:
+                        req["_id"] = str(req["_id"])
+                    project["requirements"] = requirements
+                else:
+                    project["requirements"] = []
+            else:
+                project["requirements"] = []
+        except Exception:
             project["requirements"] = []
         
-        # Get test cases count (if history_collection exists)
+        # Get test cases count safely
         try:
-            from app import history_collection
-            test_cases_count = history_collection.count_documents({
-                "project_id": project_id,
-                "test_cases": {"$exists": True, "$ne": ""}
-            })
-            project["test_cases_count"] = test_cases_count
-        except (ImportError, NameError):
+            import sys
+            if 'app' in sys.modules:
+                app_module = sys.modules['app']
+                if hasattr(app_module, 'history_collection'):
+                    history_collection = app_module.history_collection
+                    test_cases_count = history_collection.count_documents({
+                        "project_id": project_id,
+                        "test_cases": {"$exists": True, "$ne": ""}
+                    })
+                    project["test_cases_count"] = test_cases_count
+                else:
+                    project["test_cases_count"] = 0
+            else:
+                project["test_cases_count"] = 0
+        except Exception:
             project["test_cases_count"] = 0
             
         return jsonify({"project": project})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 @admin_bp.route("/projects/<project_id>", methods=["PUT"])
 @admin_required
@@ -281,6 +332,10 @@ def update_project(project_id):
     data = request.json
     
     try:
+        # Check if collections are initialized
+        if projects_collection is None:
+            return jsonify({"error": "Projects collection not properly initialized"}), 500
+            
         # Find the project
         project = projects_collection.find_one({"id": project_id})
         if not project:
@@ -294,6 +349,8 @@ def update_project(project_id):
             update_data["name"] = data["name"]
         if "context" in data:
             update_data["context"] = data["context"]
+        if "language" in data:
+            update_data["language"] = data["language"]
         
         # Add updated_at timestamp
         update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -301,11 +358,16 @@ def update_project(project_id):
         
         # Update the project
         if update_data:
-            projects_collection.update_one({"id": project_id}, {"$set": update_data})
+            result = projects_collection.update_one({"id": project_id}, {"$set": update_data})
+            if result.matched_count == 0:
+                return jsonify({"error": "Project not found during update"}), 404
             
         # Get updated project
         updated_project = projects_collection.find_one({"id": project_id})
-        updated_project["_id"] = str(updated_project["_id"])
+        if updated_project:
+            updated_project["_id"] = str(updated_project["_id"])
+        else:
+            return jsonify({"error": "Project not found after update"}), 404
             
         return jsonify({"message": "Project updated successfully", "project": updated_project})
     except Exception as e:
@@ -314,20 +376,52 @@ def update_project(project_id):
 @admin_bp.route("/projects/<project_id>", methods=["DELETE"])
 @admin_required
 def delete_project(project_id):
-    """Delete a project and its collaborators"""
+    """Delete a project and its related data"""
     try:
-        # Find the project
+        # Check if collections are initialized
+        if projects_collection is None:
+            return jsonify({"error": "Projects collection not properly initialized"}), 500
+            
+        # Find the project first
         project = projects_collection.find_one({"id": project_id})
         if not project:
             return jsonify({"error": "Project not found"}), 404
             
         # Delete the project
-        projects_collection.delete_one({"id": project_id})
+        result = projects_collection.delete_one({"id": project_id})
+        if result.deleted_count == 0:
+            return jsonify({"error": "Failed to delete project"}), 500
         
         # Delete project collaborators
-        collaborators_collection.delete_many({"project_id": project_id})
+        try:
+            if collaborators_collection is not None:
+                collaborators_collection.delete_many({"project_id": project_id})
+        except Exception:
+            pass  # Continue even if this fails
         
-        return jsonify({"message": "Project and its collaborators deleted successfully"})
+        # Delete project requirements
+        try:
+            import sys
+            if 'app' in sys.modules:
+                app_module = sys.modules['app']
+                if hasattr(app_module, 'requirements_collection'):
+                    requirements_collection = app_module.requirements_collection
+                    requirements_collection.delete_many({"project_id": project_id})
+        except Exception:
+            pass  # Continue even if this fails
+        
+        # Delete project history
+        try:
+            import sys
+            if 'app' in sys.modules:
+                app_module = sys.modules['app']
+                if hasattr(app_module, 'history_collection'):
+                    history_collection = app_module.history_collection
+                    history_collection.delete_many({"project_id": project_id})
+        except Exception:
+            pass  # Continue even if this fails
+        
+        return jsonify({"message": "Project and its related data deleted successfully"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -337,6 +431,10 @@ def delete_project(project_id):
 def get_managed_projects():
     """Get projects managed by the current user"""
     try:
+        # Check if collections are initialized
+        if projects_collection is None or collaborators_collection is None:
+            return jsonify({"error": "Database collections not properly initialized"}), 500
+            
         current_user = session["user"]
         user = users_collection.find_one({"username": current_user})
         
@@ -366,6 +464,10 @@ def get_managed_projects():
 def get_assignable_users():
     """Get users that can be assigned to projects (regular users only)"""
     try:
+        # Check if collections are initialized
+        if users_collection is None:
+            return jsonify({"error": "Users collection not properly initialized"}), 500
+            
         users = list(users_collection.find(
             {"role": {"$nin": ["manager", "admin"]}},
             {"username": 1, "email": 1, "created_at": 1, "_id": 1}
@@ -385,6 +487,10 @@ def get_assignable_users():
 def get_dashboard_data():
     """Get enhanced statistics for the admin dashboard"""
     try:
+        # Check if collections are initialized
+        if users_collection is None or projects_collection is None:
+            return jsonify({"error": "Database collections not properly initialized"}), 500
+            
         # Count users by role including managers
         users_by_role = {}
         for role in ["admin", "manager", "user"]:
@@ -473,12 +579,17 @@ def get_dashboard_data():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 # Manager dashboard data
 @admin_bp.route("/manager-dashboard", methods=["GET"])
 @manager_or_admin_required
 def get_manager_dashboard_data():
     """Get dashboard data for managers"""
     try:
+        # Check if collections are initialized
+        if users_collection is None or projects_collection is None or collaborators_collection is None:
+            return jsonify({"error": "Database collections not properly initialized"}), 500
+            
         current_user = session["user"]
         user = users_collection.find_one({"username": current_user})
         

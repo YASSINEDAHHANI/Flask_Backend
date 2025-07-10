@@ -16,7 +16,7 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 import base64
-from admin import admin_bp
+from admin import admin_bp, init_admin_collections
 from manager import manager_bp
 import re
 import io
@@ -86,7 +86,7 @@ CORS(app,
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["30 per minute"]
+    default_limits=["300 per minute"]  # 10x more requests
 )
 
 # MongoDB setup
@@ -115,7 +115,12 @@ manager.collaborators_collection = collaborators_collection
 manager.requirements_collection = requirements_collection
 manager.api_keys_collection = api_keys_collection
 project_settings_collection = db["project_settings"]
-
+init_admin_collections(
+    users_collection, 
+    projects_collection, 
+    collaborators_collection, 
+    api_keys_collection if 'api_keys_collection' in globals() else None
+)
 # Global variable for Local RAG System
 local_rag_system = None
 
@@ -519,7 +524,6 @@ def logout():
     return jsonify({"message": "Logged out successfully"})
 
 @app.route("/check_session", methods=["GET", "OPTIONS"])
-@limiter.exempt
 def check_session():
     if request.method == "OPTIONS":
         return jsonify({}), 200
@@ -527,16 +531,22 @@ def check_session():
     if "user" in session:
         user = users_collection.find_one({"username": session["user"]})
         if user:
+            user_role = user.get("role", "user")
             return jsonify({
-                "logged_in": True,
+                "authenticated": True,  
+                "logged_in": True,      
                 "username": session["user"],
                 "email": user.get("email") or session["user"],
-                "role": user.get("role", "user"),
-                "is_admin": user.get("role") == "admin",
-                "is_manager": user.get("role") in ["manager", "admin"],
-                "can_create_projects": user.get("role") in ["manager", "admin"]
+                "role": user_role,
+                "is_admin": user_role == "admin",
+                "is_manager": user_role in ["manager", "admin"],
+                "can_create_projects": user_role in ["manager", "admin"]
             }), 200
-    return jsonify({"logged_in": False, "error": "Not authenticated"}), 401
+        else:
+            session.clear()
+            return jsonify({"authenticated": False, "logged_in": False}), 401
+    
+    return jsonify({"authenticated": False, "logged_in": False}), 401
 
 
 @app.route("/generate_test_cases", methods=["POST", "OPTIONS"])
@@ -2766,4 +2776,4 @@ def after_request(response):
     return response
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000, host='0.0.0.0')
+    app.run(debug=True, host="0.0.0.0", port=5000)
