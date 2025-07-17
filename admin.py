@@ -1,9 +1,11 @@
+import os
 from flask import Blueprint, jsonify, request, session
 from functools import wraps
 from datetime import datetime, timezone
 import uuid
 from bson import ObjectId
-
+from minio import Minio
+from minio.error import S3Error
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
 # These will be initialized when the blueprint is registered
@@ -11,14 +13,39 @@ users_collection = None
 projects_collection = None
 collaborators_collection = None
 api_keys_collection = None
-
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+MINIO_BUCKET = os.getenv("MINIO_BUCKET", "rag-documents")
+MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
+minio_client = None
 def init_admin_collections(app_users, app_projects, app_collaborators, app_api_keys=None):
     """Initialize collections for admin blueprint"""
-    global users_collection, projects_collection, collaborators_collection, api_keys_collection
+    global users_collection, projects_collection, collaborators_collection, api_keys_collection, minio_client
     users_collection = app_users
     projects_collection = app_projects
     collaborators_collection = app_collaborators
     api_keys_collection = app_api_keys
+    
+    # Initialize MinIO client
+    try:
+        minio_client = Minio(
+            MINIO_ENDPOINT,
+            access_key=MINIO_ACCESS_KEY,
+            secret_key=MINIO_SECRET_KEY,
+            secure=MINIO_SECURE
+        )
+        
+        # Ensure bucket exists
+        if not minio_client.bucket_exists(MINIO_BUCKET):
+            minio_client.make_bucket(MINIO_BUCKET)
+            print(f"✅ Created MinIO bucket: {MINIO_BUCKET}")
+        else:
+            print(f"✅ MinIO bucket {MINIO_BUCKET} already exists")
+            
+    except Exception as e:
+        print(f"⚠️ Failed to initialize MinIO client: {e}")
+        minio_client = None
 
 def admin_required(f):
     @wraps(f)
@@ -45,7 +72,283 @@ def manager_or_admin_required(f):
             
         return f(*args, **kwargs)
     return decorated_function
+# ========== NEW MINIO DOCUMENT MANAGEMENT ENDPOINTS ==========
 
+@admin_bp.route("/upload_document", methods=["POST"])
+@admin_required
+def admin_upload_document():
+    """Admin endpoint to upload documents to MinIO for RAG processing"""
+    username = session["user"]
+    
+    if not minio_client:
+        return jsonify({"error": "MinIO not available"}), 503
+    
+    if 'file' not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+
+    # Check file type
+    if not file.filename.lower().endswith('.pdf'):
+        return jsonify({"error": "Only PDF files are supported"}), 400
+
+    try:
+        # Read file data
+        file_data = file.read()
+        original_filename = file.filename
+        
+        # Generate unique filename to avoid conflicts
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_filename = f"{timestamp}_{original_filename}"
+        
+        # Upload to MinIO
+        from io import BytesIO
+        file_stream = BytesIO(file_data)
+        minio_client.put_object(
+            MINIO_BUCKET, 
+            unique_filename, 
+            file_stream, 
+            length=len(file_data),
+            content_type="application/pdf"
+        )
+        
+        print(f"📁 Document uploaded to MinIO: {unique_filename} by {username}")
+        
+        # Try to process with RAG if available
+        processing_result = None
+        try:
+            # Import here to avoid circular import
+            from app import minio_rag_system
+            if minio_rag_system:
+                processing_result = minio_rag_system.process_single_document(file_data, unique_filename)
+        except Exception as e:
+            print(f"⚠️ RAG processing failed: {e}")
+            processing_result = False
+        
+        return jsonify({
+            "message": f"Document '{original_filename}' uploaded successfully to MinIO",
+            "filename": unique_filename,
+            "original_filename": original_filename,
+            "uploaded_by": username,
+            "upload_timestamp": datetime.now().isoformat(),
+            "rag_processed": processing_result,
+            "size_bytes": len(file_data)
+        })
+        
+    except S3Error as e:
+        print(f"❌ MinIO upload error: {e}")
+        return jsonify({"error": f"Failed to upload to MinIO: {str(e)}"}), 500
+    except Exception as e:
+        print(f"❌ Upload error: {e}")
+        return jsonify({"error": f"Failed to upload document: {str(e)}"}), 500
+
+@admin_bp.route("/list_documents", methods=["GET"])
+@admin_required
+def admin_list_documents():
+    """Admin endpoint to list all documents in MinIO"""
+    if not minio_client:
+        return jsonify({"error": "MinIO not available"}), 503
+    
+    try:
+        # Get list of files from MinIO
+        objects = minio_client.list_objects(MINIO_BUCKET)
+        files = []
+        total_size = 0
+        
+        for obj in objects:
+            file_info = {
+                "filename": obj.object_name,
+                "size": obj.size,
+                "last_modified": obj.last_modified.isoformat() if obj.last_modified else None,
+                "etag": obj.etag
+            }
+            files.append(file_info)
+            total_size += obj.size
+        
+        # Get RAG stats if available
+        rag_stats = None
+        try:
+            from app import minio_rag_system
+            if minio_rag_system:
+                rag_stats = minio_rag_system.get_database_stats()
+        except Exception as e:
+            print(f"⚠️ Failed to get RAG stats: {e}")
+        
+        return jsonify({
+            "files": files,
+            "total_files": len(files),
+            "total_size_bytes": total_size,
+            "total_size_mb": round(total_size / (1024 * 1024), 2),
+            "bucket": MINIO_BUCKET,
+            "rag_stats": rag_stats
+        })
+        
+    except S3Error as e:
+        print(f"❌ MinIO list error: {e}")
+        return jsonify({"error": f"Failed to list documents: {str(e)}"}), 500
+    except Exception as e:
+        print(f"❌ List error: {e}")
+        return jsonify({"error": f"Failed to list documents: {str(e)}"}), 500
+
+@admin_bp.route("/delete_document", methods=["DELETE"])
+@admin_required
+def admin_delete_document():
+    """Admin endpoint to delete a document from MinIO"""
+    username = session["user"]
+    
+    if not minio_client:
+        return jsonify({"error": "MinIO not available"}), 503
+    
+    data = request.json
+    filename = data.get("filename")
+    
+    if not filename:
+        return jsonify({"error": "Filename is required"}), 400
+    
+    try:
+        # Delete file from MinIO
+        minio_client.remove_object(MINIO_BUCKET, filename)
+        
+        print(f"🗑️ Document deleted from MinIO: {filename} by {username}")
+        
+        return jsonify({
+            "message": f"Document '{filename}' deleted successfully",
+            "filename": filename,
+            "deleted_by": username,
+            "deletion_timestamp": datetime.now().isoformat()
+        })
+        
+    except S3Error as e:
+        print(f"❌ MinIO delete error: {e}")
+        return jsonify({"error": f"Failed to delete from MinIO: {str(e)}"}), 500
+    except Exception as e:
+        print(f"❌ Delete error: {e}")
+        return jsonify({"error": f"Failed to delete document: {str(e)}"}), 500
+
+@admin_bp.route("/rebuild_rag_index", methods=["POST"])
+@admin_required
+def admin_rebuild_rag_index():
+    """Admin endpoint to rebuild the RAG index from all documents in MinIO"""
+    username = session["user"]
+    
+    try:
+        # Import here to avoid circular import
+        from app import minio_rag_system
+        if not minio_rag_system:
+            return jsonify({"error": "MinIO RAG system not available"}), 503
+        
+        # Clear existing vector store
+        import shutil
+        persist_dir = minio_rag_system.persist_directory
+        if os.path.exists(persist_dir):
+            shutil.rmtree(persist_dir)
+            print(f"🔄 Cleared existing vector store: {persist_dir}")
+        
+        # Reset vector store
+        minio_rag_system.vector_store = None
+        minio_rag_system._setup_vector_store()
+        
+        # Reprocess all documents
+        success = minio_rag_system.process_documents_from_minio()
+        
+        if not success:
+            return jsonify({"error": "Failed to rebuild RAG index"}), 500
+        
+        # Get updated stats
+        stats = minio_rag_system.get_database_stats()
+        
+        print(f"✅ RAG index rebuilt by {username}")
+        
+        return jsonify({
+            "message": "RAG index rebuilt successfully",
+            "rebuilt_by": username,
+            "rebuild_timestamp": datetime.now().isoformat(),
+            "stats": stats
+        })
+        
+    except Exception as e:
+        print(f"❌ RAG rebuild error: {e}")
+        return jsonify({"error": f"Failed to rebuild RAG index: {str(e)}"}), 500
+
+@admin_bp.route("/rag_stats", methods=["GET"])
+@admin_required
+def admin_rag_stats():
+    """Admin endpoint to get RAG system statistics"""
+    try:
+        # Get MinIO file list
+        files = []
+        total_size = 0
+        
+        if minio_client:
+            try:
+                objects = minio_client.list_objects(MINIO_BUCKET)
+                for obj in objects:
+                    files.append(obj.object_name)
+                    total_size += obj.size
+            except Exception as e:
+                print(f"⚠️ Failed to list MinIO files: {e}")
+        
+        # Get RAG stats
+        rag_stats = None
+        try:
+            from app import minio_rag_system
+            if minio_rag_system:
+                rag_stats = minio_rag_system.get_database_stats()
+        except Exception as e:
+            print(f"⚠️ Failed to get RAG stats: {e}")
+        
+        return jsonify({
+            "minio_info": {
+                "endpoint": MINIO_ENDPOINT,
+                "bucket": MINIO_BUCKET,
+                "total_files": len(files),
+                "total_size_mb": round(total_size / (1024 * 1024), 2),
+                "files": files
+            },
+            "rag_stats": rag_stats,
+            "system_status": {
+                "minio_available": minio_client is not None,
+                "rag_available": rag_stats is not None
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Stats error: {e}")
+        return jsonify({"error": f"Failed to get stats: {str(e)}"}), 500
+
+@admin_bp.route("/download_document/<filename>", methods=["GET"])
+@admin_required
+def admin_download_document(filename):
+    """Admin endpoint to download a document from MinIO"""
+    if not minio_client:
+        return jsonify({"error": "MinIO not available"}), 503
+    
+    try:
+        # Get object from MinIO
+        response = minio_client.get_object(MINIO_BUCKET, filename)
+        data = response.read()
+        response.close()
+        response.release_conn()
+        
+        # Return file as download
+        from flask import send_file
+        from io import BytesIO
+        
+        return send_file(
+            BytesIO(data),
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/pdf"
+        )
+        
+    except S3Error as e:
+        print(f"❌ MinIO download error: {e}")
+        return jsonify({"error": f"Failed to download from MinIO: {str(e)}"}), 500
+    except Exception as e:
+        print(f"❌ Download error: {e}")
+        return jsonify({"error": f"Failed to download document: {str(e)}"}), 500
 # User management endpoints
 @admin_bp.route("/users", methods=["GET"])
 @admin_required
@@ -481,11 +784,12 @@ def get_assignable_users():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Statistics and dashboard data
+# Replace your current get_dashboard_data function with this enhanced version:
+
 @admin_bp.route("/dashboard", methods=["GET"])
 @admin_required
 def get_dashboard_data():
-    """Get enhanced statistics for the admin dashboard"""
+    """Get enhanced statistics for the admin dashboard including recent data"""
     try:
         # Check if collections are initialized
         if users_collection is None or projects_collection is None:
@@ -507,60 +811,61 @@ def get_dashboard_data():
         # Total projects
         total_projects = projects_collection.count_documents({})
         
-        # Count projects by creator role
+        # Count projects by creator (for contributors table)
         project_creators = list(projects_collection.aggregate([
             {"$group": {"_id": "$user", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}},
             {"$limit": 10}
         ]))
         
-        # Enhanced project statistics by creator role
-        projects_by_creator_role = {"admin": 0, "manager": 0, "user": 0}
-        
-        # Get all projects with their creators
-        all_projects = list(projects_collection.find({}, {"user": 1, "id": 1}))
-        for project in all_projects:
-            creator = users_collection.find_one({"username": project["user"]})
-            creator_role = creator.get("role", "user") if creator else "user"
-            projects_by_creator_role[creator_role] += 1
-        
-        # Get recent users
+        # Get recent users (last 5 created)
         recent_users = list(users_collection.find({}).sort("created_at", -1).limit(5))
         for user in recent_users:
             user["_id"] = str(user["_id"])
             if "password" in user:
-                user["password"] = "********"
+                user["password"] = "********"  # Hide password for security
         
-        # Get recent projects
+        # Get recent projects (last 5 created)
         recent_projects = list(projects_collection.find({}).sort("created_at", -1).limit(5))
         for project in recent_projects:
             project["_id"] = str(project["_id"])
         
-        # Manager-specific statistics
-        manager_stats = {
-            "total_managers": users_by_role.get("manager", 0),
-            "projects_by_managers": projects_by_creator_role["manager"],
-            "average_projects_per_manager": 0
-        }
+        # Get MinIO document stats
+        document_stats = {"total_documents": 0, "total_size_mb": 0, "minio_available": False}
         
-        if manager_stats["total_managers"] > 0:
-            manager_stats["average_projects_per_manager"] = round(
-                manager_stats["projects_by_managers"] / manager_stats["total_managers"], 1
-            )
+        if minio_client:
+            try:
+                objects = minio_client.list_objects(MINIO_BUCKET)
+                total_size = 0
+                doc_count = 0
+                
+                for obj in objects:
+                    doc_count += 1
+                    total_size += obj.size
+                
+                document_stats = {
+                    "total_documents": doc_count,
+                    "total_size_mb": round(total_size / (1024 * 1024), 2),
+                    "minio_available": True,
+                    "bucket": MINIO_BUCKET
+                }
+            except Exception as e:
+                print(f"⚠️ Error getting MinIO stats: {e}")
+                document_stats["minio_available"] = False
         
-        # Get top manager contributors
-        manager_contributors = []
-        managers = list(users_collection.find({"role": "manager"}, {"username": 1}))
-        for manager in managers:
-            project_count = projects_collection.count_documents({"user": manager["username"]})
-            if project_count > 0:
-                manager_contributors.append({
-                    "_id": manager["username"],
-                    "count": project_count,
-                    "role": "manager"
-                })
-        
-        manager_contributors.sort(key=lambda x: x["count"], reverse=True)
+        # Get RAG system stats
+        rag_stats = {"rag_available": False}
+        try:
+            from app import minio_rag_system
+            if minio_rag_system:
+                rag_data = minio_rag_system.get_database_stats()
+                rag_stats = {
+                    "rag_available": True,
+                    "total_chunks": rag_data.get("total_chunks", 0),
+                    "processed_files": rag_data.get("unique_files", 0)
+                }
+        except Exception as e:
+            print(f"⚠️ Error getting RAG stats: {e}")
         
         return jsonify({
             "users_stats": {
@@ -569,17 +874,16 @@ def get_dashboard_data():
             },
             "projects_stats": {
                 "total": total_projects,
-                "by_user": project_creators,
-                "by_creator_role": projects_by_creator_role
+                "by_user": project_creators  # Add this for the contributors table
             },
-            "manager_stats": manager_stats,
-            "manager_contributors": manager_contributors[:5],  # Top 5 managers
+            "document_stats": document_stats,
+            "rag_stats": rag_stats,
+            # ✅ ADD THESE NEW FIELDS:
             "recent_users": recent_users,
             "recent_projects": recent_projects
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 # Manager dashboard data
 @admin_bp.route("/manager-dashboard", methods=["GET"])
 @manager_or_admin_required

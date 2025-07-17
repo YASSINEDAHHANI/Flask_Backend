@@ -39,18 +39,19 @@ import json
 from datetime import datetime, timezone
 import os
 from flask_cors import CORS, cross_origin
-
+from minio import Minio
+from minio.error import S3Error
+from flask_cors import CORS
 try:
-    from local_rag_system import LocalRAGSystem
-    LOCAL_RAG_AVAILABLE = True
-    print("✅ Local RAG System imported successfully")
+    from minio_rag_system import MinIORAGSystem
+    MINIO_RAG_AVAILABLE = True
+    print("✅ MinIO RAG System imported successfully")
 except ImportError as e:
-    LOCAL_RAG_AVAILABLE = False
-    print(f"⚠️ Local RAG System not available: {e}")
+    MINIO_RAG_AVAILABLE = False
+    print(f"❌ CRITICAL ERROR: MinIO RAG System not available: {e}")
+    print("❌ Application cannot start without MinIO RAG System")
 
 load_dotenv()
-print(f"DEBUG - RAG_OLLAMA_MODEL from env: {os.getenv('RAG_OLLAMA_MODEL', 'NOT_SET')}")
-
 
 class MongoJSONEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -75,19 +76,19 @@ app.config.update(
     SESSION_REFRESH_EACH_REQUEST=True
 )
 
-# CORS configuration
-#cors = CORS(app)
-CORS(app, 
-     origins=["http://localhost:3000"],  # Specific origin instead of wildcard
-     supports_credentials=True,
-     allow_headers=["Content-Type", "Authorization"],
-     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-)
+
+cors = CORS(app, supports_credentials=True)
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["300 per minute"]  # 10x more requests
+    default_limits=["300 per minute"] 
 )
+
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+MINIO_BUCKET = os.getenv("MINIO_BUCKET", "rag-documents")
+MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
 
 # MongoDB setup
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
@@ -103,6 +104,7 @@ api_keys_collection = db["api_keys"]
 user_settings_collection = db["user_settings"]
 user_settings_collection.create_index([("user", 1)])
 user_settings_collection.create_index([("user", 1), ("project_id", 1)])
+
 # Initialize collections for admin and manager modules
 admin.users_collection = users_collection
 admin.projects_collection = projects_collection
@@ -115,68 +117,71 @@ manager.collaborators_collection = collaborators_collection
 manager.requirements_collection = requirements_collection
 manager.api_keys_collection = api_keys_collection
 project_settings_collection = db["project_settings"]
+
 init_admin_collections(
     users_collection, 
     projects_collection, 
     collaborators_collection, 
     api_keys_collection if 'api_keys_collection' in globals() else None
 )
-# Global variable for Local RAG System
-local_rag_system = None
 
-def initialize_local_rag():
-    """Initialize the Local RAG System if available and configured"""
-    global local_rag_system
+# Global variable for MinIO RAG System ONLY
+minio_rag_system = None
+
+def initialize_minio_rag():
+    """Initialize the MinIO RAG System - REQUIRED FOR APPLICATION TO START"""
+    global minio_rag_system
     
-    if not LOCAL_RAG_AVAILABLE:
+    if not MINIO_RAG_AVAILABLE:
+        print("❌ CRITICAL ERROR: MinIO RAG System not available")
+        print("❌ Application cannot start without MinIO RAG System")
         return False
     
     try:
-        # Get RAG configuration from environment or use defaults
-        PDF_FOLDER = os.getenv("RAG_PDF_FOLDER", r"C:\Users\dahan\Documents\Stage PFE DXC cdg\llm_rag\rag\rag")
-        PERSIST_DIR = os.getenv("RAG_PERSIST_DIR", "./chroma_db_local")
-        OLLAMA_MODEL = "qwen3:8b"
+        OLLAMA_MODEL = os.getenv("RAG_OLLAMA_MODEL", "qwen3:8b")
         OLLAMA_BASE_URL = os.getenv("RAG_OLLAMA_BASE_URL", "http://35.173.131.200:11434")
+        PERSIST_DIR = os.getenv("MINIO_PERSIST_DIR", "./chroma_db_minio")
         
-        print(f"🤖 Initializing Local RAG System...")
-        print(f"📁 PDF Folder: {PDF_FOLDER}")
-        print(f"💾 Persist Directory: {PERSIST_DIR}")
+        print(f"🤖 Initializing MinIO RAG System...")
+        print(f"🗄️ MinIO Endpoint: {MINIO_ENDPOINT}")
+        print(f"📦 Bucket: {MINIO_BUCKET}")
         print(f"🔗 Ollama URL: {OLLAMA_BASE_URL}")
         print(f"🧠 Model: {OLLAMA_MODEL}")
+        print(f"💾 Persist Directory: {PERSIST_DIR}")
         
-        # Check if PDF folder exists
-        if not os.path.exists(PDF_FOLDER):
-            print(f"⚠️ PDF folder not found: {PDF_FOLDER}")
-            return False
-        
-        local_rag_system = LocalRAGSystem(
-            pdf_folder=PDF_FOLDER,
+        minio_rag_system = MinIORAGSystem(
+            minio_endpoint=MINIO_ENDPOINT,
+            minio_access_key=MINIO_ACCESS_KEY,
+            minio_secret_key=MINIO_SECRET_KEY,
+            bucket_name=MINIO_BUCKET,
             persist_directory=PERSIST_DIR,
-            ollama_model=OLLAMA_MODEL
+            ollama_base_url=OLLAMA_BASE_URL,
+            ollama_model=OLLAMA_MODEL,
+            secure=MINIO_SECURE
         )
         
         # Check if documents need to be processed
-        if not os.path.exists(PERSIST_DIR):
-            print("📝 Processing documents for the first time...")
-            if local_rag_system.process_documents(recursive=True):
-                print("✅ Local RAG System initialized successfully!")
+        stats = minio_rag_system.get_database_stats()
+        if stats.get('total_chunks', 0) == 0:
+            print("📝 Processing documents from MinIO...")
+            if minio_rag_system.process_documents_from_minio():
+                print("✅ MinIO RAG System initialized successfully!")
             else:
-                print("❌ Failed to process documents")
-                local_rag_system = None
-                return False
+                print("⚠️ No documents found in MinIO bucket - ready for uploads")
         else:
-            print("✅ Local RAG System initialized with existing database!")
+            print("✅ MinIO RAG System initialized with existing database!")
         
         return True
         
     except Exception as e:
-        print(f"❌ Failed to initialize Local RAG System: {e}")
-        local_rag_system = None
+        print(f"❌ CRITICAL ERROR: Failed to initialize MinIO RAG: {e}")
+        print("❌ Application cannot start without MinIO RAG System")
+        minio_rag_system = None
         return False
 
-# Initialize Local RAG on startup
-if LOCAL_RAG_AVAILABLE:
-    initialize_local_rag()
+def check_rag_availability():
+    """Check if MinIO RAG system is available and ready"""
+    return MINIO_RAG_AVAILABLE and minio_rag_system is not None
 
 # Create indexes
 history_collection.create_index([("user", 1)])
@@ -193,11 +198,9 @@ api_keys_collection.create_index([("user", 1)])
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Handle OPTIONS requests FIRST - before checking authentication
         if request.method == "OPTIONS":
             return "", 200
         
-        # Then check authentication for actual requests
         if "user" not in session:
             return jsonify({"error": "Unauthorized"}), 401
         return f(*args, **kwargs)
@@ -208,8 +211,6 @@ def is_admin(username):
     user = users_collection.find_one({"username": username})
     return user and user.get("role") == "admin"
 
-
-#Manager Profile
 def is_manager_or_admin(username):
     """Check if a user has manager or admin role"""
     user = users_collection.find_one({"username": username})
@@ -233,24 +234,21 @@ def manager_required(f):
 
 def get_user_api_key(username, project_id=None):
     """Get a user's API key, with optional project-specific override."""
-    # First try to get a project-specific key if project_id is provided
     if project_id:
         project_key = api_keys_collection.find_one({
             "user": username,
             "project_id": project_id
         })
         if project_key and project_key.get("api_key"):
-            return project_key["api_key"]  # CHANGED: No decryption
+            return project_key["api_key"]
     
-    # If no project key, try to get the user's default key
     user_key = api_keys_collection.find_one({
         "user": username,
         "project_id": {"$exists": False}
     })
     if user_key and user_key.get("api_key"):
-        return user_key["api_key"]  # CHANGED: No decryption
+        return user_key["api_key"]
     
-    # No fallback to environment variable anymore
     return None
 
 def get_anthropic_client(username, project_id=None):
@@ -260,32 +258,6 @@ def get_anthropic_client(username, project_id=None):
         raise ValueError("No API key available")
     return anthropic.Anthropic(api_key=api_key)
 
-def generate_test_cases_with_local_rag(requirements, context=""):
-    """Generate test cases using the local RAG system"""
-    global local_rag_system
-    
-    if not local_rag_system:
-        raise ValueError("Local RAG system not available")
-    
-    try:
-        # Create a comprehensive requirement for test case generation
-        full_requirement = f"{requirements}"
-        if context:
-            full_requirement = f"Context: {context}\n\nRequirement: {requirements}"
-        
-        print(f"🤖 Generating test cases with Local RAG...")
-        test_cases = local_rag_system.generate_test_cases(full_requirement, context)
-        
-        return test_cases
-        
-    except Exception as e:
-        print(f"Error generating test cases with local RAG: {e}")
-        raise
-
-def check_rag_availability():
-    """Check if local RAG system is available and properly initialized"""
-    global local_rag_system
-    return LOCAL_RAG_AVAILABLE and local_rag_system is not None
 
 def detect_priority(description):
     if not description:
@@ -344,158 +316,264 @@ def get_status_label(status):
     }
     return status_labels.get(status, status)
 
-def generate_test_case_prompt(requirements, format_type="default", context="", example_case="", language="en"):
-    """Generate the prompt for test case generation with language support"""
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["300 per minute"] 
+)
+
+# MinIO Configuration - REQUIRED
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+MINIO_BUCKET = os.getenv("MINIO_BUCKET", "rag-documents")
+MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
+
+# MongoDB setup
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+mongo_client = MongoClient(MONGO_URI)
+db = mongo_client["chat_app"]
+history_collection = db["chat_history"]
+users_collection = db["users"]
+projects_collection = db["projects"]
+requirements_collection = db["requirements"]
+versions_collection = db["versions"]
+collaborators_collection = db["collaborators"]
+api_keys_collection = db["api_keys"]
+user_settings_collection = db["user_settings"]
+user_settings_collection.create_index([("user", 1)])
+user_settings_collection.create_index([("user", 1), ("project_id", 1)])
+
+# Initialize collections for admin and manager modules
+admin.users_collection = users_collection
+admin.projects_collection = projects_collection
+admin.collaborators_collection = collaborators_collection
+admin.api_keys_collection = api_keys_collection
+
+manager.users_collection = users_collection
+manager.projects_collection = projects_collection
+manager.collaborators_collection = collaborators_collection
+manager.requirements_collection = requirements_collection
+manager.api_keys_collection = api_keys_collection
+project_settings_collection = db["project_settings"]
+
+init_admin_collections(
+    users_collection, 
+    projects_collection, 
+    collaborators_collection, 
+    api_keys_collection if 'api_keys_collection' in globals() else None
+)
+
+# Global variable for MinIO RAG System ONLY
+minio_rag_system = None
+
+def initialize_minio_rag():
+    """Initialize the MinIO RAG System - REQUIRED FOR APPLICATION TO START"""
+    global minio_rag_system
     
-    if language == "fr":
-        # French prompts
-        if format_type == "custom" and example_case.strip():
-            example_format = example_case
-        elif format_type == "gherkin":
-            example_format = example_case if example_case.strip() else "Format Gherkin"
+    if not MINIO_RAG_AVAILABLE:
+        print("❌ CRITICAL ERROR: MinIO RAG System not available")
+        print("❌ Application cannot start without MinIO RAG System")
+        return False
+    
+    try:
+        OLLAMA_MODEL = os.getenv("RAG_OLLAMA_MODEL", "qwen3:8b")
+        OLLAMA_BASE_URL = os.getenv("RAG_OLLAMA_BASE_URL", "http://35.173.131.200:11434")
+        PERSIST_DIR = os.getenv("MINIO_PERSIST_DIR", "./chroma_db_minio")
+        
+        print(f"🤖 Initializing MinIO RAG System...")
+        print(f"🗄️ MinIO Endpoint: {MINIO_ENDPOINT}")
+        print(f"📦 Bucket: {MINIO_BUCKET}")
+        print(f"🔗 Ollama URL: {OLLAMA_BASE_URL}")
+        print(f"🧠 Model: {OLLAMA_MODEL}")
+        print(f"💾 Persist Directory: {PERSIST_DIR}")
+        
+        minio_rag_system = MinIORAGSystem(
+            minio_endpoint=MINIO_ENDPOINT,
+            minio_access_key=MINIO_ACCESS_KEY,
+            minio_secret_key=MINIO_SECRET_KEY,
+            bucket_name=MINIO_BUCKET,
+            persist_directory=PERSIST_DIR,
+            ollama_base_url=OLLAMA_BASE_URL,
+            ollama_model=OLLAMA_MODEL,
+            secure=MINIO_SECURE
+        )
+        
+        # Check if documents need to be processed
+        stats = minio_rag_system.get_database_stats()
+        if stats.get('total_chunks', 0) == 0:
+            print("📝 Processing documents from MinIO...")
+            if minio_rag_system.process_documents_from_minio():
+                print("✅ MinIO RAG System initialized successfully!")
+            else:
+                print("⚠️ No documents found in MinIO bucket - ready for uploads")
         else:
-            example_format = """Cas de Test 1: Connexion Valide
-Description: L'utilisateur se connecte avec des identifiants valides
-Prérequis: L'utilisateur a un compte valide
-Étapes:
-    1. Naviguer vers la page de connexion.
-    2. Saisir un email et mot de passe valides.
-    3. Cliquer sur "Se connecter".
-Résultat Attendu: L'utilisateur est connecté avec succès et redirigé vers le tableau de bord.
+            print("✅ MinIO RAG System initialized with existing database!")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ CRITICAL ERROR: Failed to initialize MinIO RAG: {e}")
+        print("❌ Application cannot start without MinIO RAG System")
+        minio_rag_system = None
+        return False
 
-Cas de Test 2: Connexion Invalide
-Description: L'utilisateur tente de se connecter avec des identifiants invalides
-Prérequis: L'utilisateur est sur la page de connexion
-Étapes:
-    1. Accéder à la page de connexion.
-    2. Saisir un email valide et un mot de passe invalide.
-    3. Cliquer sur "Se connecter".
-Résultat Attendu: Un message d'erreur s'affiche et l'utilisateur reste sur la page de connexion.
-"""
+def check_rag_availability():
+    """Check if MinIO RAG system is available and ready"""
+    return MINIO_RAG_AVAILABLE and minio_rag_system is not None
 
-        instruction = f"""
-Générez des cas de test pour l'exigence suivante en utilisant le format spécifié.
-{"Contexte fonctionnel: " + context if context else ""} 
-Exigence: {requirements}
-Format:
-{example_format}
+# Create indexes
+history_collection.create_index([("user", 1)])
+history_collection.create_index([("timestamp", -1)])
+projects_collection.create_index([("user", 1)])
+requirements_collection.create_index([("project_id", 1)])
+requirements_collection.create_index([("user", 1)])
+versions_collection.create_index([("requirement_id", 1)])
+versions_collection.create_index([("timestamp", -1)])
+collaborators_collection.create_index([("project_id", 1)])
+collaborators_collection.create_index([("email", 1)])
+api_keys_collection.create_index([("user", 1)])
 
-Concentrez-vous sur :
-1. Les scénarios de test positifs et négatifs
-2. Les cas limites et les conditions aux bornes
-3. Des étapes de test claires et réalisables
-4. Les résultats attendus pour chaque cas de test
-5. Les prérequis et les exigences de données de test
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if request.method == "OPTIONS":
+            return "", 200
+        
+        if "user" not in session:
+            return jsonify({"error": "Unauthorized"}), 401
+        return f(*args, **kwargs)
+    return decorated_function
 
-Fournissez au moins 5-8 cas de test complets couvrant différents scénarios.
-"""
+def is_admin(username):
+    """Check if a user has admin role"""
+    user = users_collection.find_one({"username": username})
+    return user and user.get("role") == "admin"
+
+def is_manager_or_admin(username):
+    """Check if a user has manager or admin role"""
+    user = users_collection.find_one({"username": username})
+    return user and user.get("role") in ["manager", "admin"]
+
+def can_create_projects(username):
+    """Check if a user can create projects (manager or admin only)"""
+    return is_manager_or_admin(username)
+
+def manager_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if "user" not in session:
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        if not is_manager_or_admin(session["user"]):
+            return jsonify({"error": "Manager or admin access required"}), 403
+            
+        return f(*args, **kwargs)
+    return decorated_function
+
+def get_user_api_key(username, project_id=None):
+    """Get a user's API key, with optional project-specific override."""
+    if project_id:
+        project_key = api_keys_collection.find_one({
+            "user": username,
+            "project_id": project_id
+        })
+        if project_key and project_key.get("api_key"):
+            return project_key["api_key"]
+    
+    user_key = api_keys_collection.find_one({
+        "user": username,
+        "project_id": {"$exists": False}
+    })
+    if user_key and user_key.get("api_key"):
+        return user_key["api_key"]
+    
+    return None
+
+def get_anthropic_client(username, project_id=None):
+    """Get an Anthropic client using the appropriate API key."""
+    api_key = get_user_api_key(username, project_id)
+    if not api_key:
+        raise ValueError("No API key available")
+    return anthropic.Anthropic(api_key=api_key)
+
+def generate_test_cases_with_minio_rag(requirements, context=""):
+    """Generate test cases using the MinIO RAG system"""
+    global minio_rag_system
+    
+    if not minio_rag_system:
+        raise ValueError("MinIO RAG system not available")
+    
+    try:
+        full_requirement = f"{requirements}"
+        if context:
+            full_requirement = f"Context: {context}\n\nRequirement: {requirements}"
+        
+        print(f"🤖 Generating test cases with MinIO RAG...")
+        test_cases = minio_rag_system.generate_test_cases(full_requirement, context)
+        
+        return test_cases
+        
+    except Exception as e:
+        print(f"Error generating test cases with MinIO RAG: {e}")
+        raise
+
+def detect_priority(description):
+    if not description:
+        return "medium"
+    
+    description_lower = description.lower()
+    
+    high_keywords = [
+        "security", "authentication", "authorization", "critical", "urgent", "payment", 
+        "billing", "data protection", "privacy", "compliance", "regulation", "gdpr",
+        "safety", "emergency", "backup", "recovery", "must", "required", "essential",
+        "login", "access control", "encryption", "vulnerability", "exploit"
+    ]
+    
+    low_keywords = [
+        "nice to have", "optional", "cosmetic", "ui enhancement", "color", "font",
+        "styling", "aesthetic", "minor improvement", "suggestion", "preference",
+        "nice-to-have", "future enhancement", "wishlist", "optional feature"
+    ]
+    
+    high_count = sum(1 for keyword in high_keywords if keyword in description_lower)
+    low_count = sum(1 for keyword in low_keywords if keyword in description_lower)
+    
+    if high_count > low_count and high_count >= 1:
+        return "high"
+    elif low_count > high_count and low_count >= 1:
+        return "low"
     else:
-        # English prompts (your existing logic)
-        example_format_default = """Test Case 1: Valid Login
-Description: User logs in with valid credentials
-Preconditions: User has a valid account
-Steps:
-    1. Navigate to the login page.
-    2. Enter valid email and password.
-    3. Click on "Login".
-Expected Result: User is successfully logged in and redirected to the dashboard.
+        return "medium"
 
-Test Case 2: Invalid Login
-Description: User attempts to log in with invalid credentials
-Preconditions: User is on the login page
-Steps:
-    1. Access the login page.
-    2. Enter valid email and invalid password.
-    3. Click on "Login".
-Expected Result: An error message is displayed, and the user remains on the login page.
-"""
+def get_priority_label(priority):
+    priority_labels = {
+        "low": "Faible",
+        "medium": "Moyenne", 
+        "high": "Élevée"
+    }
+    return priority_labels.get(priority, priority)
 
-        if format_type == "custom" and example_case.strip():
-            example_format = example_case
-        elif format_type == "gherkin":
-            example_format = example_case if example_case.strip() else "Gherkin format"
-        else:
-            example_format = example_format_default
+def get_category_label(category):
+    category_labels = {
+        "functionality": "Fonctionnalité",
+        "performance": "Performance",
+        "security": "Sécurité",
+        "usability": "Utilisabilité",
+        "compatibility": "Compatibilité"
+    }
+    return category_labels.get(category, category)
 
-        instruction = f"""
-Generate test cases for the following requirement using the specified format.
-{"Functional context: " + context if context else ""} 
-Requirement: {requirements}
-Format:
-{example_format}
-
-Focus on:
-1. Both positive and negative test scenarios
-2. Edge cases and boundary conditions
-3. Clear, actionable test steps
-4. Expected results for each test case
-5. Prerequisites and test data requirements
-
-Provide at least 5-8 comprehensive test cases covering different scenarios.
-"""
-    
-    return instruction
-
-def extract_text_from_pdf(file):
-    """Extract text from a PDF file"""
-    try:
-        reader = PyPDF2.PdfReader(file)
-        text = ""
-        for page in reader.pages:
-            text += page.extract_text() + "\n"
-        return text.strip()
-    except Exception as e:
-        print(f"Error extracting text from PDF: {e}")
-        raise
-
-def extract_text_from_docx(file):
-    """Extract text from a DOCX file"""
-    try:
-        doc = docx.Document(file)
-        text = ""
-        for paragraph in doc.paragraphs:
-            text += paragraph.text + "\n"
-        return text.strip()
-    except Exception as e:
-        print(f"Error extracting text from DOCX: {e}")
-        raise
-
-@app.route("/check_ai_services", methods=["GET"])
-@login_required
-def check_ai_services_enhanced():
-    """Check for available AI services based on PROJECT settings only"""
-    username = session["user"]
-    project_id = request.args.get("project_id")
-    
-    try:
-        if not project_id:
-            return jsonify({
-                "claude_available": False,
-                "local_rag_available": check_rag_availability(),
-                "effective_service": "local" if check_rag_availability() else None,
-                "project_configured": False,
-                "message": "No project selected"
-            })
-        
-        # Only check project-level settings
-        effective_service = get_effective_llm_for_project(project_id)
-        project_settings = get_project_llm_settings(project_id)
-        
-        services = {
-            "claude_available": bool(project_settings and project_settings.get("claude_api_key")),
-            "local_rag_available": check_rag_availability(),
-            "effective_service": effective_service,
-            "project_configured": bool(project_settings),
-            "manager_configured": bool(project_settings and project_settings.get("manager"))
-        }
-        
-        return jsonify(services)
-        
-    except Exception as e:
-        print(f"Error checking AI services: {e}")
-        return jsonify({"error": str(e)}), 500
-
-# Authentication routes
+def get_status_label(status):
+    status_labels = {
+        "draft": "Brouillon",
+        "in_review": "En révision",
+        "approved": "Approuvé",
+        "implemented": "Implémenté",
+        "rejected": "Rejeté"
+    }
+    return status_labels.get(status, status)
 @app.route("/login", methods=["POST"])
 def login():
     data = request.json
@@ -616,8 +694,8 @@ def generate_test_cases():
                 requirement_id, requirement_title, api_key, project_id
             )
         else:
-            # Generate test cases using local RAG
-           test_cases = generate_test_cases_rag(
+            # Generate test cases using MinIO RAG
+            test_cases = generate_test_cases_minio_rag(
                 requirements, format_type, context, example_case,
                 requirement_id, requirement_title, project_id
             )
@@ -633,6 +711,7 @@ def generate_test_cases():
         print(f"Error generating test cases: {e}")
         return jsonify({"error": str(e)}), 500
 
+
 def generate_test_cases_claude(requirements, format_type, context, example_case, requirement_id, requirement_title, api_key, project_id=None):
     """Generate test cases using Claude API with project-level API key and language"""
     try:
@@ -646,12 +725,11 @@ def generate_test_cases_claude(requirements, format_type, context, example_case,
         # Create Anthropic client with project API key
         anthropic_client = anthropic.Anthropic(api_key=api_key)
         
-        # NOW PASS 5 PARAMETERS INCLUDING LANGUAGE
         test_case_instruction = generate_test_case_prompt(requirements, format_type, context, example_case, project_language)
        
-        # Call Claude API - UPDATED MODEL NAME
+        # Call Claude API
         response = anthropic_client.messages.create(
-            model="claude-3-5-haiku-20241022",  # FIXED MODEL NAME
+            model="claude-3-5-haiku-20241022",
             max_tokens=2000,
             messages=[{"role": "user", "content": test_case_instruction}]
         )
@@ -661,6 +739,7 @@ def generate_test_cases_claude(requirements, format_type, context, example_case,
         # Save to history with project context
         username = session.get("user")
         
+        # ✅ FIXED: Mark as "generated" not "ai_assistant"
         history_entry = {
             "user": username,
             "project_id": project_id,
@@ -671,10 +750,13 @@ def generate_test_cases_claude(requirements, format_type, context, example_case,
             "format_type": format_type,
             "context": context,
             "example_case": example_case,
-            "ai_service": "claude",
+            "ai_service": "claude",  
             "language": project_language,
             "timestamp": datetime.now(timezone.utc),
-            "used_project_settings": True
+            "used_project_settings": True,
+            "update_type": "generated",  # ✅ Keep as "generated"
+            "source": "initial_generation",  # ✅ Mark as initial generation
+            "generation_method": "api_call"  # ✅ Distinguish from chat
         }
         
         if history_collection is not None:
@@ -685,6 +767,68 @@ def generate_test_cases_claude(requirements, format_type, context, example_case,
     except Exception as e:
         print(f"Claude API error: {e}")
         raise Exception(f"Claude API error: {str(e)}")
+
+def generate_test_cases_minio_rag(requirements, format_type, context, example_case, requirement_id, requirement_title, project_id=None):
+    """Generate test cases using MinIO RAG system with language support"""
+    try:
+        if not check_rag_availability():
+            raise Exception("MinIO RAG system not available")
+        
+        # Get project language if project_id is provided
+        project_language = "en"  # default
+        if project_id:
+            project = projects_collection.find_one({"id": project_id})
+            if project:
+                project_language = project.get('language', 'en')
+        
+        # Create a formatted prompt that works with your RAG system
+        full_context = ""
+        if context:
+            full_context = f"Context: {context}\n\n"
+        
+        # Add language instruction
+        if project_language == 'fr':
+            language_instruction = "Veuillez répondre en français.\n\n"
+        else:
+            language_instruction = "Please respond in English.\n\n"
+        
+        full_requirement = f"{language_instruction}{full_context}Requirement: {requirements}"
+        
+        # Call MinIO RAG system
+        print(f"🤖 Calling MinIO RAG generate_test_cases method...")
+        test_cases = minio_rag_system.generate_test_cases(full_requirement, context)
+        
+        # Save to history with project context
+        username = session.get("user")
+        
+        # ✅ FIXED: Mark as "generated" not "ai_assistant"
+        history_entry = {
+            "user": username,
+            "project_id": project_id,
+            "requirement_id": requirement_id,
+            "requirement_title": requirement_title,
+            "requirements": requirements,
+            "test_cases": test_cases,
+            "format_type": format_type,
+            "context": context,
+            "example_case": example_case,
+            "ai_service": "minio",  
+            "language": project_language,
+            "timestamp": datetime.now(timezone.utc),
+            "used_project_settings": True,
+            "update_type": "generated",  # ✅ Keep as "generated"
+            "source": "initial_generation",  # ✅ Mark as initial generation
+            "generation_method": "api_call"  # ✅ Distinguish from chat
+        }
+        
+        if history_collection is not None:
+            history_collection.insert_one(history_entry)
+        
+        return test_cases
+        
+    except Exception as e:
+        print(f"MinIO RAG error: {e}")
+        raise Exception(f"MinIO RAG error: {str(e)}")
 
 @app.route("/generate_test_cases_stream", methods=["POST"])
 @login_required
@@ -717,7 +861,7 @@ def generate_test_cases_stream():
         try:
             full_response = ""
             
-            # Use project-configured AI service - CLAUDE OR LOCAL ONLY
+            # Use project-configured AI service - CLAUDE OR MINIO ONLY
             effective_service = get_effective_llm_for_project(project_id)
             
             if effective_service == "claude":
@@ -729,7 +873,7 @@ def generate_test_cases_stream():
                 
                 client = anthropic.Anthropic(api_key=api_key)
                 with client.messages.stream(
-                    model="claude-3-5-sonnet-20241022",  # FIXED MODEL NAME
+                    model="claude-3-5-sonnet-20241022",
                     max_tokens=4000,
                     messages=[{"role": "user", "content": test_case_instruction}]
                 ) as stream:
@@ -737,25 +881,19 @@ def generate_test_cases_stream():
                         full_response += text
                         yield f"data: {text}\n\n"
             
-            elif effective_service == "local":
-                # Use Local RAG - FIXED CONSTRUCTOR
+            elif effective_service == "minio":
+                # Use MinIO RAG System
                 if check_rag_availability():
-                    PDF_FOLDER = os.getenv("RAG_PDF_FOLDER", r"C:\Users\dahan\Documents\Stage PFE DXC cdg\llm_rag\rag\rag")
-                    rag = LocalRAGSystem(
-                        pdf_folder=PDF_FOLDER,
-                        persist_directory=os.getenv("RAG_PERSIST_DIR", "./chroma_db_local"),
-                        ollama_model="qwen3:8b"
-                    )
-                    response = rag.generate_test_cases(test_case_instruction)
+                    response = minio_rag_system.generate_test_cases(test_case_instruction)
                     full_response = response
                     yield f"data: {response}\n\n"
                 else:
-                    yield f"data: {json.dumps({'error': 'Local RAG system not available'})}\n\n"
+                    yield f"data: {json.dumps({'error': 'MinIO RAG system not available'})}\n\n"
                     return
             
             else:
                 # No valid service configured
-                yield f"data: {json.dumps({'error': 'No AI service configured. Please contact your manager to configure Claude API or ensure Local RAG is available.'})}\n\n"
+                yield f"data: {json.dumps({'error': 'No AI service configured. Please contact your manager to configure Claude API or ensure MinIO RAG is available.'})}\n\n"
                 return
             
             # Save to history with project context
@@ -770,7 +908,10 @@ def generate_test_cases_stream():
                 "ai_service": effective_service,
                 "language": project_language,
                 "timestamp": datetime.now(timezone.utc),
-                "used_project_settings": True
+                "used_project_settings": True,
+                "update_type": "generated",  # ✅ Mark as generated
+                "source": "streaming_generation",  # ✅ Mark as streaming generation
+                "generation_method": "stream_api"  # ✅ Distinguish from chat
             }
             
             if history_collection is not None:
@@ -787,64 +928,7 @@ def generate_test_cases_stream():
         'Connection': 'keep-alive'
     })
 
-# Replace the generate_test_cases_rag function with this:
 
-def generate_test_cases_rag(requirements, format_type, context, example_case, requirement_id, requirement_title, project_id=None):
-    """Generate test cases using local RAG system with language support"""
-    try:
-        if not check_rag_availability():
-            raise Exception("Local RAG system not available")
-        
-        # Get project language if project_id is provided
-        project_language = "en"  # default
-        if project_id:
-            project = projects_collection.find_one({"id": project_id})
-            if project:
-                project_language = project.get('language', 'en')
-        
-        # Create a formatted prompt that works with your RAG system
-        full_context = ""
-        if context:
-            full_context = f"Context: {context}\n\n"
-        
-        # Add language instruction
-        if project_language == 'fr':
-            language_instruction = "Veuillez répondre en français.\n\n"
-        else:
-            language_instruction = "Please respond in English.\n\n"
-        
-        full_requirement = f"{language_instruction}{full_context}Requirement: {requirements}"
-        
-        # Call your local RAG system with the correct method signature
-        test_cases = local_rag_system.generate_test_cases(full_requirement, context)
-        
-        # Save to history with project context
-        username = session.get("user")
-        
-        history_entry = {
-            "user": username,
-            "project_id": project_id,
-            "requirement_id": requirement_id,
-            "requirement_title": requirement_title,
-            "requirements": requirements,
-            "test_cases": test_cases,
-            "format_type": format_type,
-            "context": context,
-            "example_case": example_case,
-            "ai_service": "local_rag",
-            "language": project_language,  # Add this line
-            "timestamp": datetime.now(timezone.utc),
-            "used_project_settings": True
-        }
-        
-        if history_collection is not None:
-            history_collection.insert_one(history_entry)
-        
-        return test_cases
-        
-    except Exception as e:
-        print(f"Local RAG error: {e}")
-        raise Exception(f"Local RAG error: {str(e)}")
 
 
 def generate_test_case_prompt(requirements, format_type="default", context="", example_case="", language="en"):
@@ -1038,11 +1122,8 @@ def save_test_cases():
     requirement_title = data.get("requirement_title", "")
     
     username = session["user"]
-    
-    # Create a timestamp for the current update
     current_time = datetime.now(timezone.utc)
     
-    # Prepare the history data
     history_data = {
         "user": username,
         "test_cases": test_cases,
@@ -1058,13 +1139,13 @@ def save_test_cases():
     if requirement_title:
         history_data["requirement_title"] = requirement_title
     
-    # Insert the new history entry
     history_collection.insert_one(history_data)
     
     return jsonify({
         "message": "Test cases saved successfully",
         "timestamp": current_time.isoformat()
     })
+
 
 @app.route("/history", methods=["GET"])
 @login_required
@@ -1198,7 +1279,7 @@ def chat_with_test_cases():
     print(f"Message: {user_message[:100]}..." if len(user_message) > 100 else f"Message: {user_message}")
     print(f"Direct mode: {direct_mode}, Active history ID: {active_history_id}")
     
-    # *** REQUIRE PROJECT ID ***
+    # REQUIRE PROJECT ID
     if not project_id:
         error_msg = "Project ID is required for AI chat assistant"
         print(f"ERROR: {error_msg}")
@@ -1208,12 +1289,12 @@ def chat_with_test_cases():
             headers={'Cache-Control': 'no-cache', 'Connection': 'keep-alive'}
         )
     
-    # Get the effective LLM service for this project (Claude or Local only)
+    # Get the effective LLM service for this project (Claude or MinIO only)
     effective_service = get_effective_llm_for_project(project_id)
     print(f"Using {effective_service} service for project {project_id}")
     
     if not effective_service:
-        error_msg = "No AI service configured for this project. Please contact your manager to configure Claude API or ensure Local RAG is available."
+        error_msg = "No AI service configured for this project. Please contact your manager to configure Claude API or ensure MinIO RAG is available."
         print(f"ERROR: {error_msg}")
         return Response(
             f"data: {json.dumps({'error': error_msg})}\n\n", 
@@ -1262,7 +1343,7 @@ def chat_with_test_cases():
             full_response = ""
             updated_test_cases = None
             
-            # *** ONLY CLAUDE OR LOCAL RAG - NO GEMINI ***
+            # ONLY CLAUDE OR MINIO RAG
             if effective_service == "claude":
                 # Use Claude API
                 api_key = get_project_api_key(project_id)
@@ -1288,7 +1369,7 @@ def chat_with_test_cases():
                     
                     # Create Claude streaming request
                     with client.messages.stream(
-                        model="claude-3-5-sonnet-20241022",  # FIXED MODEL NAME
+                        model="claude-3-5-sonnet-20241022",
                         max_tokens=4000,
                         system=system_message,
                         messages=claude_messages
@@ -1303,29 +1384,21 @@ def chat_with_test_cases():
                     yield "data: [DONE]\n\n"
                     return
                     
-            elif effective_service == "local":
-                # Use Local RAG System - FIXED CONSTRUCTOR
+            elif effective_service == "minio":
+                # Use MinIO RAG System
                 try:
-                    print(f"Using Local RAG for chat")
+                    print(f"Using MinIO RAG for chat")
                     
                     if not check_rag_availability():
-                        yield f"data: {json.dumps({'error': 'Local RAG system is not available. Please contact your manager to configure Claude API.'})}\n\n"
+                        yield f"data: {json.dumps({'error': 'MinIO RAG system is not available. Please contact your manager to configure Claude API.'})}\n\n"
                         yield "data: [DONE]\n\n"
                         return
-                    
-                    # Use the local RAG system for chat - FIXED
-                    PDF_FOLDER = os.getenv("RAG_PDF_FOLDER", r"C:\Users\dahan\Documents\Stage PFE DXC cdg\llm_rag\rag\rag")
-                    rag = LocalRAGSystem(
-                        pdf_folder=PDF_FOLDER,
-                        persist_directory=os.getenv("RAG_PERSIST_DIR", "./chroma_db_local"),
-                        ollama_model="qwen3:8b"
-                    )
                     
                     # For direct mode test case modifications, use generate_test_cases
                     if direct_mode and test_cases and any(keyword in user_message.lower() 
                         for keyword in ['modify', 'change', 'update', 'add', 'remove', 'edit']):
                         
-                        # Generate modified test cases using local RAG
+                        # Generate modified test cases using MinIO RAG
                         context_prompt = f"""
                         Current test cases:
                         {test_cases}
@@ -1335,32 +1408,32 @@ def chat_with_test_cases():
                         Please modify the test cases according to the user's request and return the COMPLETE updated test cases.
                         """
                         
-                        response = rag.generate_test_cases(context_prompt)
+                        response = minio_rag_system.generate_test_cases(context_prompt)
                         full_response = response
                         updated_test_cases = response
                         
                         yield f"data: {json.dumps({'message': response})}\n\n"
                     else:
-                        # Regular chat using local RAG
-                        response = rag.query(user_message)
+                        # Regular chat using MinIO RAG
+                        response = minio_rag_system.query(user_message)
                         full_response = response
                         
                         yield f"data: {json.dumps({'message': response})}\n\n"
                         
                 except Exception as rag_error:
-                    print(f"Local RAG error: {rag_error}")
-                    yield f"data: {json.dumps({'error': f'Local RAG error: {str(rag_error)}'})}\n\n"
+                    print(f"MinIO RAG error: {rag_error}")
+                    yield f"data: {json.dumps({'error': f'MinIO RAG error: {str(rag_error)}'})}\n\n"
                     yield "data: [DONE]\n\n"
                     return
             
             else:
                 # No valid service configured
-                error_msg = "No valid AI service configured. Please contact your manager to configure Claude API or ensure Local RAG is available."
+                error_msg = "No valid AI service configured. Please contact your manager to configure Claude API or ensure MinIO RAG is available."
                 yield f"data: {json.dumps({'error': error_msg})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
             
-            # *** POST-PROCESSING FOR TEST CASE UPDATES ***
+            # POST-PROCESSING FOR TEST CASE UPDATES
             if direct_mode and full_response:
                 # Extract test cases from response if they're in a code block
                 import re
@@ -1378,23 +1451,43 @@ def chat_with_test_cases():
                         object_id = ObjectId(active_history_id)
                         current_time = datetime.now(timezone.utc)
                         
+                        # ✅ FIXED: Properly mark as AI Assistant modification
+                        update_data = {
+                            "test_cases": updated_test_cases,
+                            "updated_at": current_time,
+                            "timestamp": current_time,  # Update main timestamp too
+                            "ai_service": effective_service,
+                            "update_type": "ai_assistant",     # ✅ Mark as AI Assistant
+                            "modified_by_ai": True,           # ✅ Additional flag
+                            "last_ai_service": effective_service,
+                            "source": "chat_modification",    # ✅ Mark source as chat
+                            "generation_method": "chat_interaction"  # ✅ Distinguish from API
+                        }
+                        
                         history_collection.update_one(
                             {"_id": object_id},
-                            {"$set": {
-                                "test_cases": updated_test_cases,
-                                "updated_at": current_time,
-                                "ai_service": effective_service  # Track which service was used
-                            }}
+                            {"$set": update_data}
                         )
                         
-                        yield f"data: {json.dumps({'updated_test_cases': updated_test_cases, 'history_updated': True, 'confirmation': 'Modifications appliquées avec succès.'})}\n\n"
+                        print(f"✅ Updated history {active_history_id} with AI Assistant modification")
+                        
+                        yield f"data: {json.dumps({
+                            'updated_test_cases': updated_test_cases, 
+                            'history_updated': True, 
+                            'confirmation': 'Modifications appliquées avec succès.',
+                            'update_source': 'ai_assistant',  # ✅ Send update source to frontend
+                            'service_used': effective_service
+                        })}\n\n"
                         
                     except Exception as update_error:
                         print(f"Error updating history: {update_error}")
-                        yield f"data: {json.dumps({'updated_test_cases': updated_test_cases, 'history_updated': False, 'update_error': str(update_error), 'confirmation': 'Modifications appliquées avec succès.'})}\n\n"
-            
-            yield f"data: {json.dumps({'complete': True, 'full_response': full_response, 'service_used': effective_service})}\n\n"
-            yield "data: [DONE]\n\n"
+                        yield f"data: {json.dumps({
+                            'updated_test_cases': updated_test_cases, 
+                            'history_updated': False, 
+                            'update_error': str(update_error), 
+                            'confirmation': 'Modifications appliquées avec succès.',
+                            'update_source': 'ai_assistant'
+                        })}\n\n"
             
         except Exception as e:
             error_msg = f"Unexpected error in AI chat processing: {str(e)}"
@@ -1409,40 +1502,6 @@ def chat_with_test_cases():
         'Connection': 'keep-alive'
     })
 
-
-# 4. ADD A NEW ENDPOINT TO CHECK GLOBAL API SERVICE:
-
-
-
-@app.route("/extract_text", methods=["POST"])
-@login_required
-def extract_text():
-    if 'file' not in request.files:
-        return jsonify({"error": "No file provided"}), 400
-
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "No file selected"}), 400
-
-    try:
-        filename = file.filename.lower()
-        if filename.endswith('.pdf'):
-            text = extract_text_from_pdf(file)
-        elif filename.endswith('.docx'):
-            text = extract_text_from_docx(file)
-        elif filename.endswith('.txt'):
-            text = file.read().decode('utf-8')
-        else:
-            return jsonify({"error": "Unsupported file format. Please upload PDF, DOCX, or TXT files."}), 400
-        
-        return jsonify({
-            "text": text,
-            "message": f"Text extracted successfully from {file.filename}"
-        })
-        
-    except Exception as e:
-        print(f"Error extracting text: {str(e)}")
-        return jsonify({"error": f"Failed to extract text: {str(e)}"}), 500
 
 # Project Management
 @app.route("/projects", methods=["GET"])
@@ -2222,11 +2281,11 @@ def get_effective_llm_service(username, project_id=None):
             return get_effective_llm_for_project(project_id)
         else:
             # No project context, default to local RAG if available
-            return "local" if check_rag_availability() else None
+            return "minio" if check_rag_availability() else None
                 
     except Exception as e:
         print(f"Error determining effective LLM service: {e}")
-        return "local" if check_rag_availability() else None
+        return "minio" if check_rag_availability() else None
 
 
 
@@ -2268,57 +2327,85 @@ def validate_claude_api_key(api_key):
         return False, f"API key validation failed: {str(e)}"
 
 
-def save_user_llm_settings(username, llm_choice, api_key=None, project_id=None):
-    """Save user's LLM preference and API key - CLAUDE AND LOCAL ONLY"""
+
+def save_project_llm_settings(project_id, manager_username, llm_choice, api_key=None):
+    """Save LLM settings at project level - CLAUDE AND MINIO ONLY"""
     try:
-        filter_query = {"user": username}
-        if project_id:
-            filter_query["project_id"] = project_id
-        else:
-            filter_query["project_id"] = {"$exists": False}
+        print(f"Saving project LLM settings for project {project_id} by {manager_username}")
         
+        # Verify manager permissions
+        user = users_collection.find_one({"username": manager_username})
+        if not user or user.get("role") not in ["manager", "admin"]:
+            print(f"Access denied: User {manager_username} role is {user.get('role') if user else 'None'}")
+            return False, "Only managers can configure project LLM settings"
+        
+        # Verify manager owns the project
+        project = projects_collection.find_one({"id": project_id})
+        if not project:
+            print(f"Project not found: {project_id}")
+            return False, "Project not found"
+        
+        if user.get("role") != "admin" and project["user"] != manager_username:
+            print(f"Permission denied: Project owner is {project['user']}, requesting user is {manager_username}")
+            return False, "You can only configure settings for projects you manage"
+        
+        # Prepare settings data
         settings_data = {
-            "user": username,
-            "llm_service": llm_choice,  # "local" or "claude" only
+            "project_id": project_id,
+            "manager": manager_username,
+            "llm_service": llm_choice,
             "updated_at": datetime.now(timezone.utc)
         }
         
-        if project_id:
-            settings_data["project_id"] = project_id
-        
-        # Handle API key for Claude only
+        # Handle API key validation for Claude
         if llm_choice == "claude":
             if not api_key:
+                print("No API key provided for Claude service")
                 return False, "API key is required for Claude"
             
+            print(f"Validating Claude API key for project {project_id}")
+            # Validate API key
             is_valid, message = validate_claude_api_key(api_key)
             if not is_valid:
+                print(f"API key validation failed: {message}")
                 return False, f"API key validation failed: {message}"
             
-            settings_data["claude_api_key"] = api_key
+            settings_data["claude_api_key"] = api_key.strip()
             settings_data["api_key_validated"] = True
             settings_data["api_key_validated_at"] = datetime.now(timezone.utc)
+            print("API key validated and stored successfully")
             
-        elif llm_choice == "local":
+        elif llm_choice == "minio":
+            # Remove API key if switching to MinIO
             settings_data["claude_api_key"] = None
             settings_data["api_key_validated"] = False
-        else:
-            return False, f"Invalid LLM choice: {llm_choice}. Only 'claude' and 'local' are supported."
+            print("Switched to MinIO service, removed API key")
         
-        existing_settings = user_settings_collection.find_one(filter_query)
+        # Check if settings already exist
+        existing_settings = project_settings_collection.find_one({"project_id": project_id})
         
         if existing_settings:
+            # Update existing settings
             settings_data["created_at"] = existing_settings.get("created_at", datetime.now(timezone.utc))
-            user_settings_collection.update_one(filter_query, {"$set": settings_data})
+            project_settings_collection.update_one(
+                {"project_id": project_id},
+                {"$set": settings_data}
+            )
+            print("Updated existing project settings")
         else:
+            # Create new settings
             settings_data["created_at"] = datetime.now(timezone.utc)
-            user_settings_collection.insert_one(settings_data)
+            project_settings_collection.insert_one(settings_data)
+            print("Created new project settings")
         
-        return True, "Settings saved successfully"
+        return True, "Project LLM settings saved successfully"
         
     except Exception as e:
-        print(f"Error saving user LLM settings: {e}")
+        print(f"Error saving project LLM settings: {e}")
+        import traceback
+        traceback.print_exc()
         return False, f"Error saving settings: {str(e)}"
+
 
 def get_user_llm_settings(username, project_id=None):
     """Get user's LLM settings for a specific project or global"""
@@ -2350,7 +2437,7 @@ def get_effective_llm_for_user(username, project_id=None):
         settings = get_user_llm_settings(username, project_id)
         
         if not settings:
-            return "local" if check_rag_availability() else None
+            return "minio" if check_rag_availability() else None
         
         llm_service = settings.get("llm_service", "local")
         
@@ -2358,13 +2445,13 @@ def get_effective_llm_for_user(username, project_id=None):
             if settings.get("claude_api_key") and settings.get("api_key_validated"):
                 return "claude"
             else:
-                return "local" if check_rag_availability() else None
+                return "minio" if check_rag_availability() else None
         else:
-            return "local" if check_rag_availability() else None
+            return "minio" if check_rag_availability() else None
             
     except Exception as e:
         print(f"Error determining effective LLM service: {e}")
-        return "local" if check_rag_availability() else None
+        return "minio" if check_rag_availability() else None
 
 
 
@@ -2416,7 +2503,7 @@ def save_project_llm_settings(project_id, manager_username, llm_choice, api_key=
             settings_data["api_key_validated_at"] = datetime.now(timezone.utc)
             print("API key validated and stored successfully")
             
-        elif llm_choice == "local":
+        elif llm_choice == "minio":
             # Remove API key if switching to local
             settings_data["claude_api_key"] = None
             settings_data["api_key_validated"] = False
@@ -2455,30 +2542,30 @@ def get_project_llm_settings(project_id):
         return None
 
 def get_effective_llm_for_project(project_id):
-    """Determine which LLM service should be used for a project - CLAUDE OR LOCAL ONLY"""
+    """Determine which LLM service should be used for a project - CLAUDE OR MINIO ONLY"""
     try:
         settings = get_project_llm_settings(project_id)
         
         if not settings:
-            # No project settings found, default to local if available
-            return "local" if check_rag_availability() else None
+            # No project settings found, default to minio if available
+            return "minio" if check_rag_availability() else None
         
-        llm_service = settings.get("llm_service", "local")
+        llm_service = settings.get("llm_service", "minio")
         
         if llm_service == "claude":
             # Check if API key is available and validated
             if settings.get("claude_api_key") and settings.get("api_key_validated"):
                 return "claude"
             else:
-                # API key not available or not validated, fallback to local
-                return "local" if check_rag_availability() else None
+                # API key not available or not validated, fallback to minio
+                return "minio" if check_rag_availability() else None
         else:
-            # Project configured for local
-            return "local" if check_rag_availability() else None
+            # Project configured for minio
+            return "minio" if check_rag_availability() else None
             
     except Exception as e:
         print(f"Error determining effective LLM service for project: {e}")
-        return "local" if check_rag_availability() else None
+        return "minio" if check_rag_availability() else None
 def get_project_api_key(project_id):
     """Get the API key for a project"""
     try:
@@ -2508,12 +2595,11 @@ def check_api_service():
                     "message": "Using Claude AI for this project",
                     "project_configured": True
                 })
-            elif effective_service == "local":
-                return jsonify({
-                    "configured": True,
-                    "service": "local",
-                    "service_name": "Local RAG",
-                    "message": "Using Local RAG for this project", 
+            elif effective_service == "minio":
+                    return jsonify({
+                        "service": "minio", 
+                        "service_name": "MinIO RAG",
+                        "message": "Using MinIO RAG for this project", 
                     "project_configured": True,
                     "rag_available": check_rag_availability()
                 })
@@ -2545,8 +2631,8 @@ def check_global_api_service():
         # this endpoint can just return local RAG availability
         return jsonify({
             "configured": check_rag_availability(),
-            "service": "local" if check_rag_availability() else None,
-            "service_name": "Local RAG" if check_rag_availability() else None
+            "service": "minio" if check_rag_availability() else None,
+            "service_name": "MinIO RAG" if check_rag_availability() else None
         })
         
     except Exception as e:
@@ -2562,41 +2648,35 @@ def get_project_llm_settings_endpoint(project_id):
         if not user:
             return jsonify({"error": "User not found"}), 404
         
-        # Check if user can access this project
         project = projects_collection.find_one({"id": project_id})
         if not project:
             return jsonify({"error": "Project not found"}), 404
         
         user_role = user.get("role", "user")
         
-        # Allow access if user is:
-        # 1. Project owner (manager/admin who created it)
-        # 2. Assigned user/collaborator (for read-only access)
         has_access = (
-            project["user"] == username or  # Owner
-            username in project.get("collaborators", []) or  # Collaborator
-            username in project.get("assigned_users", []) or  # Assigned user
-            user_role in ["manager", "admin"]  # Manager/Admin
+            project["user"] == username or
+            username in project.get("collaborators", []) or
+            username in project.get("assigned_users", []) or
+            user_role in ["manager", "admin"]
         )
         
         if not has_access:
             return jsonify({"error": "Access denied to this project"}), 403
         
-        # Only managers/admins who own the project can modify settings
         can_modify = user_role in ["manager", "admin"] and (
             project["user"] == username or user_role == "admin"
         )
         
         settings = get_project_llm_settings(project_id)
         
-        # Prepare response (don't expose API key to non-managers)
         response_data = {
             "project_id": project_id,
-            "llm_service": settings.get("llm_service", "local") if settings else "local",
+            "llm_service": settings.get("llm_service", "minio") if settings else "minio",
             "has_claude_key": bool(settings and settings.get("claude_api_key")) if can_modify else None,
             "api_key_validated": settings.get("api_key_validated", False) if settings else False,
             "manager": settings.get("manager") if settings else None,
-            "local_available": check_rag_availability(),
+            "minio_available": check_rag_availability(),  # Changé de 'local_available' à 'minio_available'
             "effective_service": get_effective_llm_for_project(project_id),
             "can_modify_settings": can_modify,
             "user_role": user_role
@@ -2637,7 +2717,7 @@ def validate_claude_key_endpoint():
 @app.route("/project_llm_settings/<project_id>", methods=["POST"])
 @login_required
 def save_project_llm_settings_endpoint(project_id):
-    """Save project's LLM settings - enhanced debugging"""
+    """Save project's LLM settings - MinIO and Claude only"""
     username = session["user"]
     data = request.json
     
@@ -2645,17 +2725,15 @@ def save_project_llm_settings_endpoint(project_id):
     print(f"Request data: {data}")
     
     llm_choice = data.get("llm_service")
-    # FIX: Get the API key from the correct field name
     api_key = data.get("claude_api_key", "").strip() if data.get("claude_api_key") else None
     
     print(f"llm_choice: {llm_choice}")
     print(f"api_key provided: {'Yes' if api_key else 'No'}")
-    print(f"api_key length: {len(api_key) if api_key else 0}")
     
-    # Validate input
-    if llm_choice not in ["local", "claude"]:
+    # Validate input - ONLY MINIO OR CLAUDE
+    if llm_choice not in ["minio", "claude"]:
         print(f"Invalid llm_service: {llm_choice}")
-        return jsonify({"error": "llm_service must be 'local' or 'claude'"}), 400
+        return jsonify({"error": "llm_service must be 'minio' or 'claude'"}), 400
     
     if llm_choice == "claude" and not api_key:
         print("No API key provided for Claude service")
@@ -2666,7 +2744,6 @@ def save_project_llm_settings_endpoint(project_id):
         
         if success:
             print(f"Successfully saved settings: {message}")
-            # Get updated settings to return
             updated_settings = get_project_llm_settings(project_id)
             
             response_data = {
@@ -2754,7 +2831,7 @@ def get_project_info_for_users(project_id):
             "name": project.get("name"),
             "effective_service": effective_service,
             "service_display_name": {
-                "local": "Local RAG System",
+                "minio": "MinIO RAG System",
                 "claude": "Claude AI"
             }.get(effective_service, effective_service),
             "is_configured": bool(project_settings),
@@ -2772,8 +2849,11 @@ def get_project_info_for_users(project_id):
         return jsonify({"error": str(e)}), 500
 @app.after_request
 def after_request(response):
-    # Don't set any CORS headers here since CORS() already handles it
     return response
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    if not initialize_minio_rag():
+        print("❌ CRITICAL ERROR: Cannot start application without MinIO RAG System")
+        print("❌ Please ensure MinIO is running and minio_rag_system.py is available")
+        exit(1)
+    app.run(debug=True, host="0.0.0.0", port=5000, use_reloader=False, threaded=True)
