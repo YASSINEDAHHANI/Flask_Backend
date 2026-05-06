@@ -1,4 +1,3 @@
-.env                  
 *.log                 
 chroma_db_local/      
 local_rag_system.py

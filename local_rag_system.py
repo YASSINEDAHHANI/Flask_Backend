@@ -96,7 +96,7 @@ class LocalRAGSystem:
         try:
             self.llm = Ollama(
                 model=self.ollama_model,
-                base_url="http://35.173.131.200:11434",  
+                base_url=os.getenv("RAG_OLLAMA_BASE_URL", "http://ollama:11434"), 
                 temperature=0.1,
                 top_p=0.95,
                 num_ctx=4096,  
@@ -104,7 +104,7 @@ class LocalRAGSystem:
             )
             
             test_response = self.llm("Hello")
-            logger.info(f"Remote Ollama model '{self.ollama_model}' connected successfully at http://35.173.131.200:11434")
+            logger.info(f"Remote Ollama model '{self.ollama_model}' connected successfully at {os.getenv('RAG_OLLAMA_BASE_URL', 'http://ollama:11434')}")
             
         except Exception as e:
             logger.error(f"Error connecting to remote Ollama: {e}")

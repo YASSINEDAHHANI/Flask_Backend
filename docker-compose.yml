@@ -1,0 +1,104 @@
+services:
+  # ============================================
+  # MongoDB — users, projects, history, etc.
+  # ============================================
+  mongodb:
+    image: mongo:7
+    container_name: dxc_mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    volumes:
+      - mongodb_data:/data/db
+    ports:
+      - "27017:27017"   # remove this line in production — only Flask needs to reach it
+    networks:
+      - dxc_net
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # MinIO — PDF object storage
+  # ============================================
+  minio:
+    image: minio/minio:latest
+    container_name: dxc_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console — open http://VM_IP:9001 in browser
+    networks:
+      - dxc_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Ollama — local LLM (qwen3:8b)
+  # ============================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: dxc_ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - dxc_net
+    # Uncomment if your VM has a GPU and nvidia-container-toolkit installed:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # ============================================
+  # Flask backend
+  # ============================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dxc_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "5000:5000"
+    volumes:
+      # Persist Chroma vector DB outside the container
+      - chroma_data:/app/chroma_db_minio
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    networks:
+      - dxc_net
+
+networks:
+  dxc_net:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+  minio_data:
+  ollama_data:
+  chroma_data:

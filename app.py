@@ -2851,9 +2851,10 @@ def get_project_info_for_users(project_id):
 def after_request(response):
     return response
 
+if not initialize_minio_rag():
+    print("❌ CRITICAL ERROR: Cannot start application without MinIO RAG System")
+    print("❌ Please ensure MinIO is running and minio_rag_system.py is available")
+    raise RuntimeError("MinIO RAG initialization failed")
+
 if __name__ == "__main__":
-    if not initialize_minio_rag():
-        print("❌ CRITICAL ERROR: Cannot start application without MinIO RAG System")
-        print("❌ Please ensure MinIO is running and minio_rag_system.py is available")
-        exit(1)
-    app.run(debug=True, host="0.0.0.0", port=5000, use_reloader=False, threaded=True)
+    app.run(debug=False, host="0.0.0.0", port=5000, use_reloader=False, threaded=True)
