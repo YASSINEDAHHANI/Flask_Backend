@@ -101,7 +101,7 @@ class LocalRAGSystem:
                 api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview"),
                 azure_deployment=os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT"),
                 temperature=0.1,
-                max_tokens=4096,
+                model_kwargs={"max_completion_tokens": 4096},
             )
             # Connection test
             test_response = self.llm.invoke("Hello")
