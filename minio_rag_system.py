@@ -123,6 +123,7 @@ class MinIORAGSystem:
                 api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview"),
                 azure_deployment=os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT"),
                 model_kwargs={"max_completion_tokens": 4096},
+                temperature=1, 
             )
 
             logger.info("Components initialized successfully")
