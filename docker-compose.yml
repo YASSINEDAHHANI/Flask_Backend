@@ -12,7 +12,7 @@ services:
     volumes:
       - mongodb_data:/data/db
     ports:
-      - "27017:27017"   # remove this line in production — only Flask needs to reach it
+      - "27017:27017"
     networks:
       - dxc_net
     healthcheck:
@@ -35,8 +35,8 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # Web console — open http://VM_IP:9001 in browser
+      - "9000:9000"
+      - "9001:9001"
     networks:
       - dxc_net
     healthcheck:
@@ -46,29 +46,7 @@ services:
       retries: 5
 
   # ============================================
-  # Ollama — local LLM (qwen3:8b)
-  # ============================================
-  ollama:
-    image: ollama/ollama:latest
-    container_name: dxc_ollama
-    restart: unless-stopped
-    volumes:
-      - ollama_data:/root/.ollama
-    ports:
-      - "11434:11434"
-    networks:
-      - dxc_net
-    # Uncomment if your VM has a GPU and nvidia-container-toolkit installed:
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
-
-  # ============================================
-  # Flask backend
+  # Flask backend (uses Azure OpenAI for LLM)
   # ============================================
   backend:
     build:
@@ -81,15 +59,12 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      # Persist Chroma vector DB outside the container
       - chroma_data:/app/chroma_db_minio
     depends_on:
       mongodb:
         condition: service_healthy
       minio:
         condition: service_healthy
-      ollama:
-        condition: service_started
     networks:
       - dxc_net
 
@@ -100,5 +75,4 @@ networks:
 volumes:
   mongodb_data:
   minio_data:
-  ollama_data:
   chroma_data:
