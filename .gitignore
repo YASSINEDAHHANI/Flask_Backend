@@ -4,3 +4,4 @@ local_rag_system.py
 __pycache__/          
 venv/                
 node_modules/        
+.env
