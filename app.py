@@ -138,16 +138,12 @@ def initialize_minio_rag():
         return False
     
     try:
-        OLLAMA_MODEL = os.getenv("RAG_OLLAMA_MODEL", "qwen3:8b")
-        OLLAMA_BASE_URL = os.getenv("RAG_OLLAMA_BASE_URL", "http://35.173.131.200:11434")
         PERSIST_DIR = os.getenv("MINIO_PERSIST_DIR", "./chroma_db_minio")
         
         print(f"🤖 Initializing MinIO RAG System...")
         print(f"🗄️ MinIO Endpoint: {MINIO_ENDPOINT}")
         print(f"📦 Bucket: {MINIO_BUCKET}")
-        print(f"🔗 Ollama URL: {OLLAMA_BASE_URL}")
-        print(f"🧠 Model: {OLLAMA_MODEL}")
-        print(f"💾 Persist Directory: {PERSIST_DIR}")
+        print(f"🧠 OpenRouter Model: {os.getenv('OPENROUTER_MODEL', 'anthropic/claude-3.5-haiku')}")
         
         minio_rag_system = MinIORAGSystem(
             minio_endpoint=MINIO_ENDPOINT,
@@ -155,8 +151,6 @@ def initialize_minio_rag():
             minio_secret_key=MINIO_SECRET_KEY,
             bucket_name=MINIO_BUCKET,
             persist_directory=PERSIST_DIR,
-            ollama_base_url=OLLAMA_BASE_URL,
-            ollama_model=OLLAMA_MODEL,
             secure=MINIO_SECURE
         )
         

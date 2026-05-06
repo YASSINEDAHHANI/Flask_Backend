@@ -12,7 +12,6 @@ from pypdf import PdfReader
 import PyPDF2
 from sentence_transformers import SentenceTransformer
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.llms import Ollama
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.chains import RetrievalQA
@@ -92,24 +91,29 @@ class LocalRAGSystem:
             raise
     
     def _setup_ollama(self):
-        """Setup Ollama LLM with remote AWS instance"""
+        """Setup OpenRouter LLM via OpenAI-compatible interface"""
         try:
-            self.llm = Ollama(
-                model=self.ollama_model,
-                base_url=os.getenv("RAG_OLLAMA_BASE_URL", "http://ollama:11434"), 
+            from langchain_openai import ChatOpenAI
+            
+            self.llm = ChatOpenAI(
+                model=os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-haiku"),
+                api_key=os.getenv("OPENROUTER_API_KEY"),
+                base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
                 temperature=0.1,
-                top_p=0.95,
-                num_ctx=4096,  
-                repeat_penalty=1.15
+                max_tokens=4096,
+                default_headers={
+                    "HTTP-Referer": os.getenv("OPENROUTER_SITE_URL", ""),
+                    "X-Title": os.getenv("OPENROUTER_APP_NAME", "AI Test Generator"),
+                },
             )
             
-            test_response = self.llm("Hello")
-            logger.info(f"Remote Ollama model '{self.ollama_model}' connected successfully at {os.getenv('RAG_OLLAMA_BASE_URL', 'http://ollama:11434')}")
+            # Connection test
+            test_response = self.llm.invoke("Hello")
+            logger.info(f"OpenRouter model '{os.getenv('OPENROUTER_MODEL')}' connected successfully")
             
         except Exception as e:
-            logger.error(f"Error connecting to remote Ollama: {e}")
-            logger.error("Make sure your AWS Ollama instance is running and accessible")
-            logger.error("Check if the model 'qwen3:8b' is available on the remote instance")
+            logger.error(f"Error connecting to OpenRouter: {e}")
+            logger.error("Check OPENROUTER_API_KEY in .env and ensure the model name is valid")
             raise
     
     def _setup_vector_store(self):
