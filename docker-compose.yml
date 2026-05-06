@@ -11,8 +11,6 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
     volumes:
       - mongodb_data:/data/db
-    ports:
-      - "27017:27017"
     networks:
       - dxc_net
     healthcheck:
@@ -35,8 +33,7 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9001:9001"   # console only, localhost (use SSH tunnel)
     networks:
       - dxc_net
     healthcheck:
@@ -56,8 +53,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    ports:
-      - "5000:5000"
     volumes:
       - chroma_data:/app/chroma_db_minio
     depends_on:
@@ -65,6 +60,22 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    networks:
+      - dxc_net
+
+  # ============================================
+  # Frontend — React build served by nginx + reverse proxy to backend
+  # ============================================
+  frontend:
+    build:
+      context: ../Chat-app
+      dockerfile: Dockerfile
+    container_name: dxc_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
     networks:
       - dxc_net
 
